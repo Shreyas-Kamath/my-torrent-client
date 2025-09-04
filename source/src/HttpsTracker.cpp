@@ -7,10 +7,7 @@ namespace net   = boost::asio;
 namespace ssl   = net::ssl;
 using tcp       = net::ip::tcp;
 
-std::vector<std::string> HttpsTracker::announce(const std::string& infoHash,
-                                                const std::string& peerId) {
-    std::vector<std::string> peers;
-
+std::string HttpsTracker::announce(const std::string& infoHash, const std::string& peerId) {
     try {
         // Parse host and target from trackerUrl
         auto pos = trackerUrl.find("://");
@@ -56,8 +53,6 @@ std::vector<std::string> HttpsTracker::announce(const std::string& infoHash,
         std::string body = beast::buffers_to_string(res.body().data());
         std::cout << "HTTPS Tracker response: " << body << "\n";
 
-        peers.push_back(body);
-
         beast::error_code ec;
         stream.shutdown(ec);
         if (ec == net::error::eof) {
@@ -66,10 +61,10 @@ std::vector<std::string> HttpsTracker::announce(const std::string& infoHash,
         }
         if (ec)
             throw beast::system_error{ec};
+        
+        return body;
 
     } catch (std::exception const& e) {
         std::cerr << "HttpsTracker error: " << e.what() << std::endl;
     }
-
-    return peers;
 }

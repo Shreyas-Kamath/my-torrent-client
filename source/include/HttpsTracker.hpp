@@ -19,8 +19,7 @@ class HttpsTracker : public BaseTracker {
 public:
     HttpsTracker(const std::string& url) : BaseTracker(url) {}
 
-    std::vector<std::string> announce(const std::string& infoHash,
-                                      const std::string& peerId) override;
+    std::string announce(const std::string& infoHash, const std::string& peerId) override;
 
     std::string protocol() const override { return "https"; }
 };

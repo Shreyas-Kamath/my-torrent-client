@@ -8,7 +8,7 @@ public:
     BaseTracker(const std::string& url): trackerUrl(url) {}
     virtual ~BaseTracker() = default;
 
-    virtual std::vector<std::string> announce(const std::string& infoHash,
+    virtual std::string announce(const std::string& infoHash,
                                               const std::string& peerId) = 0;
 
     virtual std::string protocol() const = 0;

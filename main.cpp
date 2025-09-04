@@ -5,10 +5,10 @@
 #include <Bencode.hpp>
 #include <TorrentFile.hpp>
 #include <TrackerFactory.hpp>
+#include <Peer.hpp>
+#include <PeerConnection.hpp>
 
 int main() {
-    std::print("Hello world from C++23");
-
     auto in = read_from_file("ubuntu-25.04-desktop-amd64.iso.torrent");
 
     auto metadata = parse_torrent(in);
@@ -18,14 +18,31 @@ int main() {
         for (const auto& url : tier) {
             try {
                 auto tracker = make_tracker(url);
-                auto peers = tracker->announce(percent_encode(metadata.info_hash), "-CT0001-123456789012");
+                auto response = tracker->announce(percent_encode(metadata.info_hash), "-CT0001-123456789012");
 
-                if (!peers.empty()) {
+                if (!response.empty()) {
                     std::cout << "Tracker succeeded: " << tracker->protocol()
                           << " " << url << "\n";
-                    for (const auto& p : peers) {
-                        std::cout << "  Peer: " << p << "\n";
+                        
+                    BEncodeParser parser(response);
+
+                    boost::asio::io_context io;
+
+                    auto dict = parser.parse().as_dict();
+                    auto _parse_blob = dict.at("peers").as_string();
+                    auto peers_blob = std::string(_parse_blob.begin(), _parse_blob.end());
+                    auto peers = parse_compact_peers(peers_blob);
+
+                    std::vector<std::shared_ptr<PeerConnection>> connections;
+
+                    for (const auto& peer : peers) {
+                        auto conn = std::make_shared<PeerConnection>(io, peer, metadata.info_hash, "-CT0001-123456789012");
+                        connections.push_back(conn); // keep alive
+                        conn->start();
                     }
+
+                    io.run();
+
                     success = true;
                     break; // move to next tier
                 }
@@ -36,4 +53,6 @@ int main() {
         }
         if (success) break;
     }
+
+
 }

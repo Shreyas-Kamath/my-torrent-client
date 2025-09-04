@@ -1,11 +1,9 @@
 #include <HttpTracker.hpp>
 #include <Utils.hpp>
 
-std::vector<std::string> HttpTracker::announce(const std::string& infoHash,
+std::string HttpTracker::announce(const std::string& infoHash,
                                                const std::string& peerId)
 {
-    std::vector<std::string> peers;
-
     try {
         ParsedUrl parsed = parse_url(trackerUrl);
 
@@ -33,14 +31,12 @@ std::vector<std::string> HttpTracker::announce(const std::string& infoHash,
         std::string body = beast::buffers_to_string(res.body().data());
         std::cout << "Tracker response: " << body << "\n";
 
-        peers.push_back(body);
-
         beast::error_code ec;
         socket.shutdown(tcp::socket::shutdown_both, ec);
+
+        return body;
     }
     catch (std::exception const& e) {
         std::cerr << "HttpTracker error: " << e.what() << std::endl;
     }
-
-    return peers;
 }

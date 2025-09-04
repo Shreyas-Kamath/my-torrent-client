@@ -24,3 +24,4 @@ inline std::string percent_encode(const std::array<uint8_t, 20>& info_hash) {
     }
     return oss.str();
 }
+

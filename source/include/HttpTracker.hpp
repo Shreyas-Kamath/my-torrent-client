@@ -1,7 +1,6 @@
 #pragma once
 
 #include <BaseTracker.hpp>
-#include <Utils.hpp>
 
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
@@ -21,7 +20,7 @@ class HttpTracker : public BaseTracker {
 public:
     HttpTracker(const std::string& url) : BaseTracker(url) {}
 
-    std::vector<std::string> announce(const std::string& infoHash, const std::string& peerId) override;
+    std::string announce(const std::string& infoHash, const std::string& peerId) override;
 
     std::string protocol() const override { return "http"; }
 };
