@@ -8,6 +8,8 @@
 #include <Peer.hpp>
 #include <PeerConnection.hpp>
 
+#include <winsock.h>
+
 int main() {
     auto in = read_from_file("ubuntu-25.04-desktop-amd64.iso.torrent");
 
