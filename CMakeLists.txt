@@ -17,6 +17,7 @@ add_executable(
     source/src/HttpsTracker.cpp
     source/src/Peer.cpp
     source/src/PeerConnection.cpp
+    source/src/PieceManager.cpp
 )
 
 target_include_directories(
