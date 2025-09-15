@@ -74,6 +74,10 @@ void PeerConnection::read_message_length() {
         boost::asio::buffer(length_buf_),
         [self](boost::system::error_code ec, std::size_t) {
             if (ec) {
+                if (ec == boost::asio::error::eof) {
+                    std::cout << "EOF reached: Torrent finished downloading\n";
+                    exit(0);
+                }
                 std::cerr << "Failed to read length: " << ec.message() << "\n";
                 return;
             }

@@ -4,6 +4,9 @@
 #include <string>
 #include <vector>
 #include <sstream>
+#include <iostream>
+
+#include <Bencode.hpp>
 
 class Peer {
 public:
@@ -17,4 +20,4 @@ private:
     uint16_t port_;
 };
 
-std::vector<Peer> parse_compact_peers(const std::string& peers_blob);
+std::vector<Peer> parse_compact_peers(const BEncodeValue& peers_blob);

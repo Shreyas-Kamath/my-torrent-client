@@ -66,7 +66,6 @@ void PieceManager::write_piece(int piece_index, const std::vector<unsigned char>
     }
 }
 
-
 size_t PieceManager::piece_length_for_index(int piece_index) const {
     return piece_index < num_pieces_ - 1 ? piece_length_ : total_length_ - piece_length_ * (num_pieces_ - 1);
 }
@@ -88,7 +87,7 @@ void PieceManager::init_files(const std::vector<TorrentFile>& files) {
 
         files_.push_back(out_file);
 
-        // Pre-create the file to ensure it exists
+        // Create the file to ensure it exists (for some reason ios::out | ios::in doesnt create a file on windows)
         std::ofstream touch(f.path, std::ios::binary | std::ios::trunc);
         if (!touch.is_open()) {
             throw std::runtime_error("Failed to create file: " + f.path);

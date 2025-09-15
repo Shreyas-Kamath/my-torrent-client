@@ -9,7 +9,7 @@
 
 int main() {
     // Read and parse torrent file
-    auto in = read_from_file("ubuntu-25.04-desktop-amd64.iso.torrent");
+    auto in = read_from_file("ratpac-73c6aeaa695cd5c2d1779d5f26a45c56180083ee.torrent");
     auto metadata = parse_torrent(in);
 
     PieceManager pm(metadata.total_size,
@@ -34,11 +34,12 @@ int main() {
                         
                     BEncodeParser parser(response);
                     boost::asio::io_context io;
-
-                    auto dict = parser.parse().as_dict();
-                    auto _parse_blob = dict.at("peers").as_string();
-                    auto peers_blob = std::string(_parse_blob.begin(), _parse_blob.end());
-                    auto peers = parse_compact_peers(peers_blob);
+                    
+                    auto peers = parse_compact_peers(parser.parse().as_dict().at("peers"));
+                    if (peers.empty()) {
+                        std::cout << "No peers found\nmoving to next tier...\n";
+                        break;
+                    }
 
                     for (const auto& peer : peers) {
                         auto conn = std::make_shared<PeerConnection>(io, peer, metadata.info_hash, "-CT0001-123456789012", pm);
