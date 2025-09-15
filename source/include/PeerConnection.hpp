@@ -1,10 +1,12 @@
 #pragma once
+
 #include <boost/asio.hpp>
 #include <memory>
 #include <string>
 #include <queue>
 
 #include <Peer.hpp>
+#include <PieceManager.hpp>
 
 using boost::asio::ip::tcp;
 
@@ -13,11 +15,13 @@ public:
     PeerConnection(boost::asio::io_context& io,
                    Peer peer,
                    std::array<uint8_t, 20ULL> info_hash,
-                   std::string peer_id)
+                   std::string peer_id,
+                   PieceManager& pm)
         : socket_(io),
           peer_(std::move(peer)),
           info_hash_(std::move(info_hash)),
-          peer_id_(std::move(peer_id)) {}
+          peer_id_(std::move(peer_id)),
+          piece_manager_(pm) {}
 
     void start();
 
@@ -31,9 +35,14 @@ private:
     std::string peer_id_;                                    //             //
 
     std::array<char, 68> handshake_buf_; // 68 byte handshake               //
+    PieceManager piece_manager_;
 
 
     // -- Download data --
+
+    struct BlockRequest {
+        int piece_index, begin, length;
+    };
 
     void read_message_length();
     void read_message_body(size_t length);
@@ -55,7 +64,7 @@ private:
     bool peer_choked_ = true;
     bool am_interested_ = false;
 
-    std::queue<int> piece_queue_; // peer has these pieces
+    std::queue<BlockRequest> block_queue_; // peer has these pieces
 
     std::vector<bool> peer_bitfield_; // Bitfield of pieces the peer has
 };

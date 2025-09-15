@@ -1,3 +1,5 @@
+#pragma once
+
 #include <vector>
 #include <string>
 #include <fstream>
@@ -6,35 +8,48 @@
 #include <iomanip>
 #include <sstream>
 #include <array>
+#include <algorithm>
+#include <filesystem>
+
+#include <TorrentFile.hpp>
 
 class PieceManager {
 public:
-    PieceManager(std::size_t num_pieces,
-                 std::size_t piece_length,
-                 const std::vector<std::array<unsigned char, 20>>& piece_hashes,
-                 std::ofstream& outfile)
-        : num_pieces_(num_pieces),
+    PieceManager(size_t total_size,
+                 size_t num_pieces,
+                 size_t piece_length,
+                 const std::vector<std::array<unsigned char, 20>>& piece_hashes)
+        : total_length_(total_size),
+          num_pieces_(num_pieces),
           piece_length_(piece_length),
-          piece_hashes_(piece_hashes),
-          outfile_(outfile) 
-    {
-        pieces_.resize(num_pieces);
-    }
+          piece_hashes_(piece_hashes)
+    { pieces_.resize(num_pieces); }
 
     void add_block(int piece_index, int begin, const std::vector<unsigned char>& block);
-
+    size_t piece_length_for_index(int piece_index) const;
+    void init_files(const std::vector<TorrentFile>& files);
+    
 private:
     struct PieceBuffer {
         std::vector<unsigned char> data;
+        std::vector<bool> block_received;
         std::size_t bytes_written = 0;
         bool is_complete = false;
     };
 
+    struct OutputFile {        // do we need this at all?
+        std::string path;
+        size_t start, length;
+    };
+
+    std::vector<OutputFile> files_;
+
     std::vector<PieceBuffer> pieces_;
-    std::size_t num_pieces_;
-    std::size_t piece_length_;
+    size_t num_pieces_;
+    size_t piece_length_;
+    size_t total_length_;
+    
     const std::vector<std::array<unsigned char, 20>>& piece_hashes_;
-    std::ofstream& outfile_;
 
     bool verify_hash(int index, const std::vector<unsigned char>& data);
 

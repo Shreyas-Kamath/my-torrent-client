@@ -1,4 +1,3 @@
-#include <print>
 #include <iostream>
 
 #include <Utils.hpp>
@@ -8,12 +7,20 @@
 #include <Peer.hpp>
 #include <PeerConnection.hpp>
 
-#include <winsock.h>
-
 int main() {
+    // Read and parse torrent file
     auto in = read_from_file("ubuntu-25.04-desktop-amd64.iso.torrent");
-
     auto metadata = parse_torrent(in);
+
+    PieceManager pm(metadata.total_size,
+                    metadata.piece_hashes.size(),
+                    metadata.piece_length,
+                    metadata.piece_hashes);
+
+    // Initialize output files for multi-file torrent
+    pm.init_files(metadata.files);
+
+    std::vector<std::shared_ptr<PeerConnection>> connections;
 
     for (const auto& tier : metadata.announce_list) {
         bool success = false;
@@ -23,11 +30,9 @@ int main() {
                 auto response = tracker->announce(percent_encode(metadata.info_hash), "-CT0001-123456789012");
 
                 if (!response.empty()) {
-                    std::cout << "Tracker succeeded: " << tracker->protocol()
-                          << " " << url << "\n";
+                    std::cout << "Tracker succeeded: " << tracker->protocol() << " " << url << "\n";
                         
                     BEncodeParser parser(response);
-
                     boost::asio::io_context io;
 
                     auto dict = parser.parse().as_dict();
@@ -35,26 +40,20 @@ int main() {
                     auto peers_blob = std::string(_parse_blob.begin(), _parse_blob.end());
                     auto peers = parse_compact_peers(peers_blob);
 
-                    std::vector<std::shared_ptr<PeerConnection>> connections;
-
                     for (const auto& peer : peers) {
-                        auto conn = std::make_shared<PeerConnection>(io, peer, metadata.info_hash, "-CT0001-123456789012");
+                        auto conn = std::make_shared<PeerConnection>(io, peer, metadata.info_hash, "-CT0001-123456789012", pm);
                         connections.push_back(conn); // keep alive
                         conn->start();
                     }
 
                     io.run();
-
                     success = true;
                     break; // move to next tier
                 }
             } catch (const std::exception& e) {
-                std::cerr << "Tracker failed: " << url
-                          << " (" << e.what() << ")\n";
+                std::cerr << "Tracker failed: " << url << " (" << e.what() << ")\n";
             }
         }
         if (success) break;
     }
-
-
 }

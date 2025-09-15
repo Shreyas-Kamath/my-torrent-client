@@ -221,7 +221,15 @@ void PeerConnection::handle_have(const std::vector<unsigned char>& payload) {
     std::cout << "Peer " << peer_.ip() << ":" << peer_.port()
               << " has piece " << piece_index << "\n";
 
-    piece_queue_.push(piece_index);
+    // expand into blocks
+    int piece_length = piece_manager_.piece_length_for_index(piece_index);
+    int offset = 0;
+
+    while (offset < piece_length) {
+        int len = std::min(16384, piece_length - offset);
+        block_queue_.emplace(piece_index, offset, len);
+        offset += len;
+    }
 
     // Send interested if not already
     if (!am_interested_) {
@@ -238,18 +246,22 @@ void PeerConnection::handle_bitfield(const std::vector<unsigned char>& payload) 
         for (int bit = 7; bit >= 0; --bit) {
             if ((payload[i] >> bit) & 1) {
                 int piece_index = i * 8 + (7 - bit);
-                piece_queue_.push(piece_index);
+                size_t piece_len = piece_manager_.piece_length_for_index(piece_index);
+
+                // break this piece into 16 KiB blocks
+                for (size_t begin = 0; begin < piece_len; begin += 16384) {
+                    size_t len = std::min<size_t>(16384, piece_len - begin);
+                    block_queue_.emplace(piece_index, (int)begin, (int)len);
+                }
             }
         }
     }
 
-    // Send interested if not already
-    if (!am_interested_ && !piece_queue_.empty()) {
+    if (!am_interested_ && !block_queue_.empty()) {
         am_interested_ = true;
         send_interested();
     }
 
-    // Try requesting immediately if unchoked
     maybe_request_next();
 }
 
@@ -270,13 +282,15 @@ void PeerConnection::handle_piece(const std::vector<unsigned char>& payload) {
               << " begin " << begin
               << " length " << block.size() << "\n";
 
-    // TODO: store this block into your piece manager / buffer
+    // try storing the block now
+    piece_manager_.add_block(piece_index, begin, block);
 }
 
 void PeerConnection::maybe_request_next() {
-    if (!am_choked_ && !piece_queue_.empty()) {
-        int piece_index = piece_queue_.front();
-        piece_queue_.pop();
-        send_request(piece_index, 0, 16384); // request first 16KB
+    if (!am_choked_) {
+        while (!block_queue_.empty()) {
+            auto req = block_queue_.front(); block_queue_.pop();
+            send_request(req.piece_index, req.begin, req.length);
+        }
     }
 }
