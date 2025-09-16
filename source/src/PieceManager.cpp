@@ -18,18 +18,18 @@ void PieceManager::add_block(int piece_index, int begin, const std::vector<unsig
             piece.bytes_written += block_size;
 
             size_t received_blocks = std::count(piece.block_received.begin(), piece.block_received.end(), true);
-            std::cout << "Piece " << piece_index 
-            << ": received block " << block_index
-            << " (" << received_blocks << "/" << piece.block_received.size() << " blocks)\n";
+            // std::cout << "Piece " << piece_index 
+            // << ": received block " << block_index
+            // << " (" << received_blocks << "/" << piece.block_received.size() << " blocks)\n";
         }
 
         if (std::all_of(piece.block_received.begin(), piece.block_received.end(), [](bool b) { return b; }) && !piece.is_complete) {
             if (verify_hash(piece_index, piece.data)) {
-                write_piece(piece_index, piece.data);
                 piece.is_complete = true;
-                std::cout << "Piece " << piece_index << " verified and written ✅\n";
+                write_piece(piece_index, piece.data);
+                std::cout << "Piece " << piece_index << " verified and written\n";
             } else {
-                std::cerr << "Hash mismatch for piece " << piece_index << " ❌ (discarding)\n";
+                std::cerr << "Hash mismatch for piece " << piece_index << "(discarding)\n";
                 piece = PieceBuffer{}; // reset buffer
             }
         }

@@ -206,9 +206,9 @@ void PeerConnection::send_request(int piece_index, int begin, int length) {
                 std::cerr << "Failed to send request: " << ec.message() << "\n";
                 return;
             }
-            std::cout << "Sent request -> piece " << piece_index
-                      << ", begin " << begin
-                      << ", length " << length << "\n";
+            // std::cout << "Sent request -> piece " << piece_index
+            //           << ", begin " << begin
+            //           << ", length " << length << "\n";
         });
 }
 
@@ -222,8 +222,8 @@ void PeerConnection::handle_have(const std::vector<unsigned char>& payload) {
         (static_cast<unsigned char>(payload[2]) << 8)  |
         (static_cast<unsigned char>(payload[3]));
 
-    std::cout << "Peer " << peer_.ip() << ":" << peer_.port()
-              << " has piece " << piece_index << "\n";
+    // std::cout << "Peer " << peer_.ip() << ":" << peer_.port()
+    //           << " has piece " << piece_index << "\n";
 
     // expand into blocks
     int piece_length = piece_manager_.piece_length_for_index(piece_index);
@@ -282,9 +282,9 @@ void PeerConnection::handle_piece(const std::vector<unsigned char>& payload) {
 
     std::vector<unsigned char> block(payload.begin() + 8, payload.end());
 
-    std::cout << "Received block: piece " << piece_index
-              << " begin " << begin
-              << " length " << block.size() << "\n";
+    // std::cout << "Received block: piece " << piece_index
+    //           << " begin " << begin
+    //           << " length " << block.size() << "\n";
 
     // try storing the block now
     piece_manager_.add_block(piece_index, begin, block);

@@ -7,9 +7,14 @@
 #include <Peer.hpp>
 #include <PeerConnection.hpp>
 
-int main() {
+int main(int argc, char* argv[]) {
     // Read and parse torrent file
-    auto in = read_from_file("ratpac-73c6aeaa695cd5c2d1779d5f26a45c56180083ee.torrent");
+    if (argc < 2) {
+        std::cerr << "Usage: " << argv[0] << " <torrent-file>\n";
+        return 1;
+    }
+    
+    auto in = read_from_file(std::string(argv[1]));
     auto metadata = parse_torrent(in);
 
     PieceManager pm(metadata.total_size,
