@@ -1,5 +1,11 @@
 #include <PieceManager.hpp>
 
+PieceManager::~PieceManager() {
+    stop_writer_ = true;
+    write_cv_.notify_all();
+    if (writer_thread_.joinable()) writer_thread_.join();
+}
+
 void PieceManager::add_block(int piece_index, int begin, const std::vector<unsigned char>& block) {
         auto& piece = pieces_[piece_index];
         if (piece.data.empty()) {
@@ -23,14 +29,19 @@ void PieceManager::add_block(int piece_index, int begin, const std::vector<unsig
             // << " (" << received_blocks << "/" << piece.block_received.size() << " blocks)\n";
         }
 
-        if (std::all_of(piece.block_received.begin(), piece.block_received.end(), [](bool b) { return b; }) && !piece.is_complete) {
+        if (std::all_of(piece.block_received.begin(), piece.block_received.end(), [](bool b){ return b; }) 
+            && !piece.is_complete) 
+        {
             if (verify_hash(piece_index, piece.data)) {
                 piece.is_complete = true;
-                write_piece(piece_index, piece.data);
-                std::cout << "Piece " << piece_index << " verified and written\n";
+                {
+                    std::lock_guard<std::mutex> lock(write_mutex_);
+                    completed_pieces_.push(piece_index);
+                }
+                write_cv_.notify_one();
             } else {
-                std::cerr << "Hash mismatch for piece " << piece_index << "(discarding)\n";
-                piece = PieceBuffer{}; // reset buffer
+                std::cerr << "Hash mismatch for piece " << piece_index << " (discarding)\n";
+                piece = PieceBuffer{}; // reset
             }
         }
     }
@@ -96,4 +107,21 @@ void PieceManager::init_files(const std::vector<TorrentFile>& files) {
         offset += f.length;
     }
     total_length_ = offset;
+}
+
+void PieceManager::writer_thread_func() {
+    while (!stop_writer_) {
+        std::unique_lock<std::mutex> lock(write_mutex_);
+        write_cv_.wait(lock, [&]{
+            return stop_writer_ || !completed_pieces_.empty();
+        });
+
+        while (!completed_pieces_.empty()) {
+            int front = completed_pieces_.front(); completed_pieces_.pop();
+            lock.unlock();
+            write_piece(front, pieces_[front].data);
+            std::cout << "Piece " << front << " verified & written.\n";
+            lock.lock();
+        }
+    }
 }

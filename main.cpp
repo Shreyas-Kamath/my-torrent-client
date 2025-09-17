@@ -41,6 +41,7 @@ int main(int argc, char* argv[]) {
                     boost::asio::io_context io;
                     
                     auto peers = parse_compact_peers(parser.parse().as_dict().at("peers"));
+                    std::cout << peers.size() << " peers.\n";
                     if (peers.empty()) {
                         std::cout << "No peers found\nmoving to next tier...\n";
                         break;

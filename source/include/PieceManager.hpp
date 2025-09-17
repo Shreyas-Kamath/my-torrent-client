@@ -10,6 +10,11 @@
 #include <array>
 #include <algorithm>
 #include <filesystem>
+#include <atomic>
+#include <thread>
+#include <condition_variable>
+#include <mutex>
+#include <queue>
 
 #include <TorrentFile.hpp>
 
@@ -23,7 +28,13 @@ public:
           num_pieces_(num_pieces),
           piece_length_(piece_length),
           piece_hashes_(piece_hashes)
-    { pieces_.resize(num_pieces); }
+    { 
+        pieces_.resize(num_pieces); 
+        std::cout << num_pieces << " pieces found.\n";
+        writer_thread_ = std::thread(&PieceManager::writer_thread_func, this);
+    }
+    
+    ~PieceManager();
 
     void add_block(int piece_index, int begin, const std::vector<unsigned char>& block);
     size_t piece_length_for_index(int piece_index) const;
@@ -51,7 +62,15 @@ private:
     
     const std::vector<std::array<unsigned char, 20>>& piece_hashes_;
 
-    bool verify_hash(int index, const std::vector<unsigned char>& data);
+    // Writer thread machinery
 
+    std::queue<int> completed_pieces_;
+    std::mutex write_mutex_;
+    std::condition_variable write_cv_;
+    std::thread writer_thread_;
+    std::atomic<bool> stop_writer_{ false };
+
+    bool verify_hash(int index, const std::vector<unsigned char>& data);
     void write_piece(int index, const std::vector<unsigned char>& data);
+    void writer_thread_func();
 };

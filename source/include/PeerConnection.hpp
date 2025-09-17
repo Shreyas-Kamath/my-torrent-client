@@ -35,7 +35,7 @@ private:
     std::string peer_id_;                                    //             //
 
     std::array<char, 68> handshake_buf_; // 68 byte handshake               //
-    PieceManager piece_manager_;
+    PieceManager& piece_manager_;
 
 
     // -- Download data --
