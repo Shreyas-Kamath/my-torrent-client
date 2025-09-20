@@ -1,6 +1,8 @@
 #pragma once
 
 #include <boost/asio.hpp>
+#include <boost/dynamic_bitset.hpp>
+
 #include <memory>
 #include <string>
 #include <queue>
@@ -21,7 +23,9 @@ public:
           peer_(std::move(peer)),
           info_hash_(std::move(info_hash)),
           peer_id_(std::move(peer_id)),
-          piece_manager_(pm) {}
+          piece_manager_(pm) {
+            peer_bitfield_.resize(pm.num_pieces_, false);
+          }
 
     void start();
 
@@ -50,7 +54,10 @@ private:
     void send_interested();
     void send_request(int piece_index, int offset, int length);
     void handle_have(const std::vector<unsigned char>& payload);
+
     void handle_bitfield(const std::vector<unsigned char>& payload);
+    void set_bitfield(const std::vector<unsigned char>& payload);
+    bool peer_has_needed_piece();
     void handle_piece(const std::vector<unsigned char>& payload);
     void maybe_request_next();
 
@@ -66,5 +73,5 @@ private:
 
     std::queue<BlockRequest> block_queue_; // peer has these pieces
 
-    std::vector<bool> peer_bitfield_; // Bitfield of pieces the peer has
+    boost::dynamic_bitset<> peer_bitfield_; // Bitfield of pieces the peer has
 };

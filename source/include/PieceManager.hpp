@@ -8,15 +8,17 @@
 #include <iomanip>
 #include <sstream>
 #include <array>
-#include <algorithm>
 #include <filesystem>
 #include <atomic>
 #include <thread>
 #include <condition_variable>
 #include <mutex>
 #include <queue>
+#include <optional>
 
 #include <TorrentFile.hpp>
+
+#include <boost/dynamic_bitset.hpp>
 
 class PieceManager {
 public:
@@ -39,11 +41,24 @@ public:
     void add_block(int piece_index, int begin, const std::vector<unsigned char>& block);
     size_t piece_length_for_index(int piece_index) const;
     void init_files(const std::vector<TorrentFile>& files);
+
+    std::optional<int> fetch_next_piece(const boost::dynamic_bitset<> peer_bitfield);
+    std::optional<int> next_block_offset(int piece_index);
+    void mark_block_requested(int piece_index, int offset);
+    void maybe_init(int piece_index);
+    bool is_complete(int piece_index);
+
+    size_t num_pieces_;
     
 private:
+    struct Block {
+        int piece_index{}, offset{}, length{};
+    };
+
     struct PieceBuffer {
         std::vector<unsigned char> data;
         std::vector<bool> block_received;
+        std::vector<bool> block_requested;
         std::size_t bytes_written = 0;
         bool is_complete = false;
     };
@@ -56,7 +71,6 @@ private:
     std::vector<OutputFile> files_;
 
     std::vector<PieceBuffer> pieces_;
-    size_t num_pieces_;
     size_t piece_length_;
     size_t total_length_;
     
@@ -66,6 +80,7 @@ private:
 
     std::queue<int> completed_pieces_;
     std::mutex write_mutex_;
+    std::mutex piece_mutex_;
     std::condition_variable write_cv_;
     std::thread writer_thread_;
     std::atomic<bool> stop_writer_{ false };

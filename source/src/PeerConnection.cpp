@@ -75,8 +75,8 @@ void PeerConnection::read_message_length() {
         [self](boost::system::error_code ec, std::size_t) {
             if (ec) {
                 if (ec == boost::asio::error::eof) {
-                    std::cout << "EOF reached: Torrent finished downloading\n";
-                    exit(0);
+                    std::cout << "No outstanding requests\n";
+                    return;
                 }
                 std::cerr << "Failed to read length: " << ec.message() << "\n";
                 return;
@@ -171,6 +171,7 @@ void PeerConnection::send_interested() {
 
 void PeerConnection::send_request(int piece_index, int begin, int length) {
     auto self = shared_from_this();
+    // std::cout << "Requesting piece " << piece_index << '\n';
 
     std::array<char, 17> msg{};
 
@@ -224,16 +225,8 @@ void PeerConnection::handle_have(const std::vector<unsigned char>& payload) {
 
     // std::cout << "Peer " << peer_.ip() << ":" << peer_.port()
     //           << " has piece " << piece_index << "\n";
-
-    // expand into blocks
-    int piece_length = piece_manager_.piece_length_for_index(piece_index);
-    int offset = 0;
-
-    while (offset < piece_length) {
-        int len = std::min(16384, piece_length - offset);
-        block_queue_.emplace(piece_index, offset, len);
-        offset += len;
-    }
+    
+    peer_bitfield_.set(piece_index);
 
     // Send interested if not already
     if (!am_interested_) {
@@ -246,27 +239,34 @@ void PeerConnection::handle_have(const std::vector<unsigned char>& payload) {
 }
 
 void PeerConnection::handle_bitfield(const std::vector<unsigned char>& payload) {
-    for (size_t i = 0; i < payload.size(); ++i) {
-        for (int bit = 7; bit >= 0; --bit) {
-            if ((payload[i] >> bit) & 1) {
-                int piece_index = i * 8 + (7 - bit);
-                size_t piece_len = piece_manager_.piece_length_for_index(piece_index);
+    set_bitfield(payload);
 
-                // break this piece into 16 KiB blocks
-                for (size_t begin = 0; begin < piece_len; begin += 16384) {
-                    size_t len = std::min<size_t>(16384, piece_len - begin);
-                    block_queue_.emplace(piece_index, (int)begin, (int)len);
-                }
-            }
-        }
-    }
-
-    if (!am_interested_ && !block_queue_.empty()) {
+    if (!am_interested_ && peer_has_needed_piece()) {
         am_interested_ = true;
         send_interested();
     }
 
     maybe_request_next();
+}
+
+bool PeerConnection::peer_has_needed_piece() {
+    for (size_t i = 0; i < peer_bitfield_.size(); ++i) {
+        if (peer_bitfield_.test(i) && !piece_manager_.is_complete(i)) {
+            return true; // This peer has at least one piece we need
+        }
+    }
+    return false;
+}
+
+void PeerConnection::set_bitfield(const std::vector<unsigned char>& payload) {
+    for (size_t i = 0; i < payload.size(); ++i) {
+        for (int bit = 7; bit >= 0; --bit) {
+            if ((payload[i] >> bit) & 1) {
+                int piece_index = i * 8 + (7 - bit);
+                peer_bitfield_.set(piece_index);
+            }
+        }
+    }
 }
 
 void PeerConnection::handle_piece(const std::vector<unsigned char>& payload) {
@@ -291,10 +291,15 @@ void PeerConnection::handle_piece(const std::vector<unsigned char>& payload) {
 }
 
 void PeerConnection::maybe_request_next() {
-    if (!am_choked_) {
-        while (!block_queue_.empty()) {
-            auto req = block_queue_.front(); block_queue_.pop();
-            send_request(req.piece_index, req.begin, req.length);
+    while (!am_choked_) {
+        auto piece_index = piece_manager_.fetch_next_piece(peer_bitfield_);
+        // if (piece_index.has_value()) std::cout << "requesting piece: " << piece_index.value() << '\n';
+        if (piece_index == std::nullopt) break; // nothing available for this peer
+
+        while (auto offset = piece_manager_.next_block_offset(piece_index.value())) {
+            // std::cout << "offset " << offset.value() << '\n';
+            send_request(piece_index.value(), offset.value(), std::min(16384, (int)piece_manager_.piece_length_for_index(piece_index.value()) - offset.value()));
         }
+        // now this piece is fully requested, move to next
     }
 }
