@@ -42,7 +42,7 @@ public:
     size_t piece_length_for_index(int piece_index) const;
     void init_files(const std::vector<TorrentFile>& files);
 
-    std::optional<int> fetch_next_piece(const boost::dynamic_bitset<> peer_bitfield);
+    std::optional<int> fetch_next_piece(const boost::dynamic_bitset<>& peer_bitfield);
     std::optional<int> next_block_offset(int piece_index);
     void mark_block_requested(int piece_index, int offset);
     void maybe_init(int piece_index);

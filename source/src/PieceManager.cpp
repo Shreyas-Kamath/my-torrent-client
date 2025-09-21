@@ -104,7 +104,7 @@ void PieceManager::init_files(const std::vector<TorrentFile>& files) {
     total_length_ = offset;
 }
 
-std::optional<int> PieceManager::fetch_next_piece(const boost::dynamic_bitset<> peer_bitfield) {
+std::optional<int> PieceManager::fetch_next_piece(const boost::dynamic_bitset<>& peer_bitfield) {
     std::scoped_lock<std::mutex> lock(piece_mutex_);
     for (int i{}; i < pieces_.size(); ++i) {
         maybe_init(i);
