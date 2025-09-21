@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#include <Utils.hpp>
+
 class BaseTracker {
 public:
     BaseTracker(const std::string& url): trackerUrl(url) {}

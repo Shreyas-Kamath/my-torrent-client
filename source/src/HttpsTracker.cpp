@@ -10,16 +10,11 @@ using tcp       = net::ip::tcp;
 std::string HttpsTracker::announce(const std::string& infoHash, const std::string& peerId) {
     try {
         // Parse host and target from trackerUrl
-        auto pos = trackerUrl.find("://");
-        std::string host = (pos != std::string::npos) ? trackerUrl.substr(pos + 3) : trackerUrl;
-        auto slash = host.find('/');
-        std::string target = (slash != std::string::npos) ? host.substr(slash) : "/";
-        host = (slash != std::string::npos) ? host.substr(0, slash) : host;
+        ParsedUrl parsed = parse_url(trackerUrl);
 
-        // Build query
-        target += "?info_hash=" + infoHash +
+        std::string target = parsed.target += "?info_hash=" + infoHash +
                   "&peer_id="   + peerId +
-                  "&port=6881&uploaded=0&downloaded=0&left=0&compact=1";
+                  "&port=6881&uploaded=0&downloaded=0&left=0&compact=1";      
 
         net::io_context ioc;
         ssl::context ctx{ssl::context::tlsv12_client};
@@ -28,20 +23,20 @@ std::string HttpsTracker::announce(const std::string& infoHash, const std::strin
         beast::ssl_stream<tcp::socket> stream(ioc, ctx);
 
         // Set SNI hostname (many trackers require this)
-        if(!SSL_set_tlsext_host_name(stream.native_handle(), host.c_str())) {
+        if(!SSL_set_tlsext_host_name(stream.native_handle(), parsed.host.c_str())) {
             throw beast::system_error(
                 beast::error_code(static_cast<int>(::ERR_get_error()),
                                   net::error::get_ssl_category()));
         }
 
-        auto const results = resolver.resolve(host, "443");
+        auto const results = resolver.resolve(parsed.host, "443");
         net::connect(stream.next_layer(), results.begin(), results.end());
 
         stream.handshake(ssl::stream_base::client);
 
         // Build HTTP GET request
         http::request<http::string_body> req{http::verb::get, target, 11};
-        req.set(http::field::host, host);
+        req.set(http::field::host, parsed.host);
         req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
 
         http::write(stream, req);

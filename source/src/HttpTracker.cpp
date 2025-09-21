@@ -1,5 +1,4 @@
 #include <HttpTracker.hpp>
-#include <Utils.hpp>
 
 std::string HttpTracker::announce(const std::string& infoHash,
                                                const std::string& peerId)
