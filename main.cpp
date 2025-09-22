@@ -20,7 +20,9 @@ int main(int argc, char* argv[]) {
     PieceManager pm(metadata.total_size,
                     metadata.piece_hashes.size(),
                     metadata.piece_length,
-                    metadata.piece_hashes);
+                    metadata.piece_hashes,
+                    metadata.name
+                );
 
     // Initialize output files for multi-file torrent
     pm.init_files(metadata.files);

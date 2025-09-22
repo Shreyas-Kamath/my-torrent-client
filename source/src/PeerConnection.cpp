@@ -297,7 +297,7 @@ void PeerConnection::maybe_request_next() {
         if (piece_index == std::nullopt) break; // nothing available for this peer
 
         while (auto offset = piece_manager_.next_block_offset(piece_index.value())) {
-            // std::cout << "offset " << offset.value() << '\n';
+            // std::cout << piece_index.value() << ": offset " << offset.value() << '\n';
             send_request(piece_index.value(), offset.value(), std::min(16384, (int)piece_manager_.piece_length_for_index(piece_index.value()) - offset.value()));
         }
         // now this piece is fully requested, move to next

@@ -25,15 +25,20 @@ public:
     PieceManager(size_t total_size,
                  size_t num_pieces,
                  size_t piece_length,
-                 const std::vector<std::array<unsigned char, 20>>& piece_hashes)
+                 const std::vector<std::array<unsigned char, 20>>& piece_hashes,
+                 const std::string& torrent_name)
         : total_length_(total_size),
           num_pieces_(num_pieces),
           piece_length_(piece_length),
-          piece_hashes_(piece_hashes)
+          piece_hashes_(std::move(piece_hashes))
     { 
         pieces_.resize(num_pieces); 
         std::cout << num_pieces << " pieces found.\n";
         writer_thread_ = std::thread(&PieceManager::writer_thread_func, this);
+        save_file_name_ = torrent_name + ".fastresume";
+
+        if (std::filesystem::exists(save_file_name_)) load_resume_data();
+        else std::ofstream out(save_file_name_, std::ios::binary | std::ios::trunc);
     }
     
     ~PieceManager();
@@ -51,9 +56,11 @@ public:
     size_t num_pieces_;
     
 private:
-    struct Block {
-        int piece_index{}, offset{}, length{};
-    };
+    std::string save_file_name_;
+
+    // read resume data if available
+    void load_resume_data();
+    void save_resume_data(int piece_index);
 
     struct PieceBuffer {
         std::vector<unsigned char> data;

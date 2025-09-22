@@ -6,6 +6,25 @@ PieceManager::~PieceManager() {
     if (writer_thread_.joinable()) writer_thread_.join();
 }
 
+void PieceManager::load_resume_data() {
+    std::ifstream in(save_file_name_, std::ios::binary | std::ios::in);
+
+    int piece_index;
+    while (in.read(reinterpret_cast<char*>(&piece_index), sizeof(int))) {
+        std::cout << "Found piece " << piece_index << "\n";
+        auto& curr = pieces_[piece_index];
+        auto curr_length = piece_length_for_index(piece_index);
+
+        curr.bytes_written = curr_length;
+        curr.is_complete = true;
+    }
+}
+
+void PieceManager::save_resume_data(int piece_index) {
+    std::ofstream out(save_file_name_, std::ios::binary | std::ios::out | std::ios::app);
+    out.write(reinterpret_cast<const char*>(&piece_index), sizeof(int));
+}
+
 void PieceManager::add_block(int piece_index, int begin, const std::vector<unsigned char>& block) {
         std::scoped_lock<std::mutex> lock(piece_mutex_);
         auto& piece = pieces_[piece_index];
@@ -33,6 +52,7 @@ void PieceManager::add_block(int piece_index, int begin, const std::vector<unsig
                         completed_pieces_.push(piece_index);
                     }
                     write_cv_.notify_one();
+                    save_resume_data(piece_index);
                 } else {
                     std::cerr << "Hash mismatch for piece " << piece_index << " (discarding)\n";
                     piece = PieceBuffer{}; // reset
@@ -94,11 +114,10 @@ void PieceManager::init_files(const std::vector<TorrentFile>& files) {
         files_.push_back(out_file);
 
         // Create the file to ensure it exists (for some reason ios::out | ios::in doesnt create a file on windows)
-        std::ofstream touch(f.path, std::ios::binary | std::ios::trunc);
-        if (!touch.is_open()) {
-            throw std::runtime_error("Failed to create file: " + f.path);
+        if (!std::filesystem::exists(f.path)) {
+            std::ofstream create(f.path, std::ios::binary | std::ios::trunc);
+            if (!create) throw std::runtime_error("Failed to create file: " + f.path);
         }
-
         offset += f.length;
     }
     total_length_ = offset;
@@ -120,6 +139,8 @@ std::optional<int> PieceManager::fetch_next_piece(const boost::dynamic_bitset<>&
 std::optional<int> PieceManager::next_block_offset(int piece_index) {
     std::scoped_lock<std::mutex> lock(piece_mutex_);
     auto& piece = pieces_[piece_index];
+    if (piece.is_complete) return std::nullopt;
+
     for (int i{}; i < piece.block_received.size(); ++i) {
         if (!piece.block_received[i] && !piece.block_requested[i]) {
             piece.block_requested[i] = true;
