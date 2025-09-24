@@ -14,6 +14,7 @@ void PeerConnection::start() {
             } else {
                 std::cout << "Connected to "
                           << self->peer_.ip() << ":" << self->peer_.port() << "\n";
+                if (self->on_connected_) self->on_connected_();
                 self->do_handshake();
             }
         });

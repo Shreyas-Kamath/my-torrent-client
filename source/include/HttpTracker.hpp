@@ -8,8 +8,6 @@
 #include <boost/asio.hpp>
 
 #include <iostream>
-#include <string>
-#include <vector>
 
 namespace beast = boost::beast;
 namespace http  = beast::http;
@@ -20,7 +18,7 @@ class HttpTracker : public BaseTracker {
 public:
     HttpTracker(const std::string& url) : BaseTracker(url) {}
 
-    std::string announce(const std::string& infoHash, const std::string& peerId) override;
+    std::vector<Peer> announce(const std::array<uint8_t, 20>& infoHash, const std::string& peerId) override;
 
     std::string protocol() const override { return "http"; }
 };
