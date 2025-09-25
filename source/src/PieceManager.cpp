@@ -9,7 +9,7 @@ PieceManager::~PieceManager() {
 void PieceManager::load_resume_data() {
     std::ifstream in(save_file_name_, std::ios::binary | std::ios::in);
 
-    int piece_index;
+    int piece_index, piece_count{};
     while (in.read(reinterpret_cast<char*>(&piece_index), sizeof(int))) {
         std::cout << "Found piece " << piece_index << "\n";
         auto& curr = pieces_[piece_index];
@@ -17,6 +17,11 @@ void PieceManager::load_resume_data() {
 
         curr.bytes_written = curr_length;
         curr.is_complete = true;
+        ++piece_count;
+    }
+    if (piece_count == num_pieces_) {
+        std::cout << "All pieces already downloaded.\nStill missing files? Delete " << save_file_name_ << " and try again.\n";
+        exit(0);
     }
 }
 
@@ -185,6 +190,14 @@ void PieceManager::writer_thread_func() {
             lock.unlock();
             write_piece(front, pieces_[front].data);
             // std::cout << "Piece " << front << " verified & written.\n";
+            // clear data
+            {
+                std::scoped_lock<std::mutex> lock(piece_mutex_);
+                pieces_[front].data.clear();
+                pieces_[front].data.shrink_to_fit();
+                pieces_[front].block_received.clear();
+                pieces_[front].block_received.shrink_to_fit();
+            }
             lock.lock();
         }
     }
