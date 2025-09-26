@@ -30,17 +30,16 @@ void PieceManager::save_resume_data(int piece_index) {
     out.write(reinterpret_cast<const char*>(&piece_index), sizeof(int));
 }
 
-void PieceManager::add_block(int piece_index, int begin, const std::vector<unsigned char>& block) {
+void PieceManager::add_block(int piece_index, int begin, const unsigned char* block, size_t size) {
         std::scoped_lock<std::mutex> lock(piece_mutex_);
         auto& piece = pieces_[piece_index];
 
-        auto block_size = block.size();
         auto block_index = begin / 16384; // find out which block has arrived
 
         if (!piece.block_received[block_index]) {
-            std::copy(block.begin(), block.end(), piece.data.begin() + begin);
+            std::copy(block, block + size, piece.data.begin() + begin);
             piece.block_received[block_index] = true;
-            piece.bytes_written += block_size;
+            piece.bytes_written += size;
 
             // size_t received_blocks = std::count(piece.block_received.begin(), piece.block_received.end(), true);
             // std::cout << "Piece " << piece_index 
@@ -130,12 +129,13 @@ void PieceManager::init_files(const std::vector<TorrentFile>& files) {
 
 std::optional<int> PieceManager::fetch_next_piece(const boost::dynamic_bitset<>& peer_bitfield) {
     std::scoped_lock<std::mutex> lock(piece_mutex_);
-    for (int i{}; i < pieces_.size(); ++i) {
+
+    for (int i = 0; i < pieces_.size(); ++i) {
         maybe_init(i);
         if (!pieces_[i].is_complete && peer_bitfield.test(i)) {
-            bool all_requested = std::all_of(pieces_[i].block_requested.begin(), pieces_[i].block_requested.end(),
-                                             [](bool b){ return b; });
-            if (!all_requested) return i;
+            // at least one unrequested block
+            auto& blocks = pieces_[i].block_requested;
+            if (std::any_of(blocks.begin(), blocks.end(), [](bool b){ return !b; })) return i;
         }
     }
     return std::nullopt;
@@ -144,11 +144,12 @@ std::optional<int> PieceManager::fetch_next_piece(const boost::dynamic_bitset<>&
 std::optional<int> PieceManager::next_block_offset(int piece_index) {
     std::scoped_lock<std::mutex> lock(piece_mutex_);
     auto& piece = pieces_[piece_index];
+
     if (piece.is_complete) return std::nullopt;
 
-    for (int i{}; i < piece.block_received.size(); ++i) {
+    for (int i = 0; i < piece.block_received.size(); ++i) {
         if (!piece.block_received[i] && !piece.block_requested[i]) {
-            piece.block_requested[i] = true;
+            mark_block_requested(piece_index, i * 16384);
             return i * 16384;
         }
     }
@@ -156,7 +157,6 @@ std::optional<int> PieceManager::next_block_offset(int piece_index) {
 }
 
 void PieceManager::mark_block_requested(int piece_index, int offset) {
-    std::scoped_lock<std::mutex> lock(piece_mutex_);
     auto& piece = pieces_[piece_index];
     piece.block_requested[offset / 16384] = true;
 }

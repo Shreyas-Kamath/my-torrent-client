@@ -53,6 +53,9 @@ private:
         int piece_index, begin, length;
     };
 
+    const int max_in_flight_blocks{500};
+    int in_flight_blocks_{};
+
     void read_message_length();
     void read_message_body(size_t length);
     void handle_message();

@@ -46,6 +46,7 @@ std::vector<Peer> HttpsTracker::announce(const std::array<uint8_t, 20>& infoHash
         http::read(stream, buffer, res);
 
         std::cout << "Received HTTPS tracker response\n";
+        std::string body = beast::buffers_to_string(res.body().data());
 
         beast::error_code ec;
         stream.shutdown(ec);
@@ -55,8 +56,8 @@ std::vector<Peer> HttpsTracker::announce(const std::array<uint8_t, 20>& infoHash
         }
         if (ec != net::ssl::error::stream_truncated)
             throw beast::system_error{ec};
-        
-        BEncodeParser parser(beast::buffers_to_string(res.body().data()));
+
+        BEncodeParser parser(body);
 
         return parse_compact_peers(parser.parse().as_dict().at("peers"));
 

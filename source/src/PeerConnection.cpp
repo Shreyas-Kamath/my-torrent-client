@@ -76,7 +76,7 @@ void PeerConnection::read_message_length() {
         [self](boost::system::error_code ec, std::size_t) {
             if (ec) {
                 if (ec == boost::asio::error::eof) {
-                    std::cout << "No outstanding requests\n";
+                    std::cout << "Peer has nothing to send\n";
                     return;
                 }
                 std::cerr << "Failed to read length: " << ec.message() << "\n";
@@ -281,26 +281,26 @@ void PeerConnection::handle_piece(const std::vector<unsigned char>& payload) {
     int begin =
         (payload[4] << 24) | (payload[5] << 16) | (payload[6] << 8) | payload[7];
 
-    std::vector<unsigned char> block(payload.begin() + 8, payload.end());
-
     // std::cout << "Received block: piece " << piece_index
     //           << " begin " << begin
     //           << " length " << block.size() << "\n";
 
     // try storing the block now
-    piece_manager_.add_block(piece_index, begin, block);
+    piece_manager_.add_block(piece_index, begin, payload.data() + 8, payload.size() - 8);
+    --in_flight_blocks_;
 }
 
 void PeerConnection::maybe_request_next() {
-    while (!am_choked_) {
+    while (!am_choked_ && in_flight_blocks_ < max_in_flight_blocks) {
         auto piece_index = piece_manager_.fetch_next_piece(peer_bitfield_);
-        // if (piece_index.has_value()) std::cout << "requesting piece: " << piece_index.value() << '\n';
-        if (piece_index == std::nullopt) break; // nothing available for this peer
+        if (!piece_index.has_value()) break;
 
-        while (auto offset = piece_manager_.next_block_offset(piece_index.value())) {
-            // std::cout << piece_index.value() << ": offset " << offset.value() << '\n';
+        if (auto offset = piece_manager_.next_block_offset(piece_index.value())) {
+        //     std::cout << "Requesting piece " << piece_index.value()
+        //   << " offset " << offset.value() << "\n";
+
             send_request(piece_index.value(), offset.value(), std::min(16384, (int)piece_manager_.piece_length_for_index(piece_index.value()) - offset.value()));
-        }
-        // now this piece is fully requested, move to next
+            ++in_flight_blocks_;
+        } else continue;
     }
 }
