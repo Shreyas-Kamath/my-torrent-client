@@ -19,6 +19,7 @@ void PieceManager::load_resume_data() {
         curr.is_complete = true;
         ++piece_count;
     }
+    std::cout << "Found " << piece_count << '/' << num_pieces_ << " pieces\n";
     if (piece_count == num_pieces_) {
         std::cout << "All pieces already downloaded.\nStill missing files? Delete " << save_file_name_ << " and try again.\n";
         exit(0);
@@ -197,6 +198,8 @@ void PieceManager::writer_thread_func() {
                 pieces_[front].data.shrink_to_fit();
                 pieces_[front].block_received.clear();
                 pieces_[front].block_received.shrink_to_fit();
+                pieces_[front].block_requested.clear();
+                pieces_[front].block_requested.shrink_to_fit();
             }
             lock.lock();
         }

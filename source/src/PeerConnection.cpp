@@ -12,9 +12,8 @@ void PeerConnection::start() {
                           << self->peer_.ip() << ":" << self->peer_.port()
                           << " -> " << ec.message() << "\n";
             } else {
-                std::cout << "Connected to "
-                          << self->peer_.ip() << ":" << self->peer_.port() << "\n";
-                if (self->on_connected_) self->on_connected_();
+                // std::cout << "Connected to "
+                //           << self->peer_.ip() << ":" << self->peer_.port() << "\n";
                 self->do_handshake();
             }
         });
@@ -43,7 +42,7 @@ void PeerConnection::on_handshake(boost::system::error_code ec, std::size_t byte
         return;
     }
 
-    std::cout << "Handshake sent (" << bytes << " bytes)\n";
+    // std::cout << "Handshake sent (" << bytes << " bytes)\n";
 
     auto self = shared_from_this();
     boost::asio::async_read(socket_,
@@ -61,8 +60,8 @@ void PeerConnection::on_handshake(boost::system::error_code ec, std::size_t byte
                 return;
             }
 
-            std::cout << "Handshake verified with " 
-                      << self->peer_.ip() << ":" << self->peer_.port() << "\n";
+            // std::cout << "Handshake verified with " 
+            //           << self->peer_.ip() << ":" << self->peer_.port() << "\n";
 
             // try reading response
             self->read_message_length();
@@ -212,6 +211,7 @@ void PeerConnection::send_request(int piece_index, int begin, int length) {
             //           << ", begin " << begin
             //           << ", length " << length << "\n";
         });
+    --in_flight_blocks_;    
 }
 
 
@@ -287,7 +287,6 @@ void PeerConnection::handle_piece(const std::vector<unsigned char>& payload) {
 
     // try storing the block now
     piece_manager_.add_block(piece_index, begin, payload.data() + 8, payload.size() - 8);
-    --in_flight_blocks_;
 }
 
 void PeerConnection::maybe_request_next() {
@@ -298,9 +297,8 @@ void PeerConnection::maybe_request_next() {
         if (auto offset = piece_manager_.next_block_offset(piece_index.value())) {
         //     std::cout << "Requesting piece " << piece_index.value()
         //   << " offset " << offset.value() << "\n";
-
+            ++in_flight_blocks_;            
             send_request(piece_index.value(), offset.value(), std::min(16384, (int)piece_manager_.piece_length_for_index(piece_index.value()) - offset.value()));
-            ++in_flight_blocks_;
         } else continue;
     }
 }

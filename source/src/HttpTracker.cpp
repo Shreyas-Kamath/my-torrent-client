@@ -34,7 +34,7 @@ std::vector<Peer> HttpTracker::announce(const std::array<uint8_t, 20>& infoHash,
         }
         
         std::string body = beast::buffers_to_string(res.body().data());
-        std::cout << "Tracker response: " << body << "\n";
+        // std::cout << "Tracker response: " << body << "\n";
 
         beast::error_code ec;
         socket.shutdown(tcp::socket::shutdown_both, ec);

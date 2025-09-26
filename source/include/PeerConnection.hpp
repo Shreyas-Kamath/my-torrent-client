@@ -18,13 +18,12 @@ public:
                    Peer peer,
                    std::array<uint8_t, 20ULL> info_hash,
                    std::string peer_id,
-                   PieceManager& pm,
-                   std::function<void()> on_connected = nullptr)
+                   PieceManager& pm
+                  )
         : socket_(io),
           peer_(std::move(peer)),
           info_hash_(std::move(info_hash)),
           peer_id_(std::move(peer_id)),
-          on_connected_(on_connected),
           piece_manager_(pm) {
             peer_bitfield_.resize(pm.num_pieces_, false);
           }
@@ -34,9 +33,6 @@ public:
 private:
     void do_handshake();                                                    //
     void on_handshake(boost::system::error_code ec, std::size_t bytes);     //
-
-    // if connected callback
-    std::function<void()> on_connected_;
 
     tcp::socket socket_;                                                    //
     Peer peer_;                                                     //      //
