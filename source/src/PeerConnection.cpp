@@ -49,7 +49,7 @@ void PeerConnection::on_handshake(boost::system::error_code ec, std::size_t byte
         boost::asio::buffer(handshake_buf_),
         [self](boost::system::error_code ec, std::size_t) {
             if (ec) {
-                std::cerr << "Handshake receive failed: " << ec.message() << "\n";
+                std::cerr << "Handshake receive failed for: " << self->peer_.ip() << ":" << self->peer_.port() << " - " << ec.message() << "\n";
                 return;
             }
 
@@ -211,7 +211,7 @@ void PeerConnection::send_request(int piece_index, int begin, int length) {
             //           << ", begin " << begin
             //           << ", length " << length << "\n";
         });
-    --in_flight_blocks_;    
+        ++in_flight_blocks_;   
 }
 
 
@@ -286,6 +286,7 @@ void PeerConnection::handle_piece(const std::vector<unsigned char>& payload) {
     //           << " length " << block.size() << "\n";
 
     // try storing the block now
+    --in_flight_blocks_;
     piece_manager_.add_block(piece_index, begin, payload.data() + 8, payload.size() - 8);
 }
 

@@ -136,6 +136,5 @@ int main(int argc, char* argv[]) {
     };
 
     announce_fn();  // start first announce
-
     io.run();
 }

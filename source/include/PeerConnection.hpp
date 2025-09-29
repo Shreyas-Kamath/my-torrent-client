@@ -45,11 +45,7 @@ private:
 
     // -- Download data --
 
-    struct BlockRequest {
-        int piece_index, begin, length;
-    };
-
-    const int max_in_flight_blocks{500};
+    const int max_in_flight_blocks{250};
     int in_flight_blocks_{};
 
     void read_message_length();
@@ -74,8 +70,6 @@ private:
     bool am_choked_ = true;
     bool peer_choked_ = true;
     bool am_interested_ = false;
-
-    std::queue<BlockRequest> block_queue_; // peer has these pieces
 
     boost::dynamic_bitset<> peer_bitfield_; // Bitfield of pieces the peer has
 };
