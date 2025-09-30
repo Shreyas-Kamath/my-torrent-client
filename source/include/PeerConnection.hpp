@@ -45,7 +45,7 @@ private:
 
     // -- Download data --
 
-    const int max_in_flight_blocks{250};
+    const int max_in_flight_blocks{500};
     int in_flight_blocks_{};
 
     void read_message_length();

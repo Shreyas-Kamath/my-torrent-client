@@ -47,8 +47,8 @@ public:
     size_t piece_length_for_index(int piece_index) const;
     void init_files(const std::vector<TorrentFile>& files);
 
-    std::optional<int> fetch_next_piece(const boost::dynamic_bitset<>& peer_bitfield);
-    std::optional<int> next_block_offset(int piece_index);
+    std::optional<std::pair<int, int>> next_block_request(const boost::dynamic_bitset<>& peer_bitfield);
+
     void mark_block_requested(int piece_index, int offset);
     void maybe_init(int piece_index);
     bool is_complete(int piece_index);
@@ -64,8 +64,8 @@ private:
 
     struct PieceBuffer {
         std::vector<unsigned char> data;
-        std::vector<bool> block_received;
-        std::vector<bool> block_requested;
+        boost::dynamic_bitset<> block_received;
+        boost::dynamic_bitset<> block_requested;
         std::size_t bytes_written = 0;
         bool is_complete = false;
     };

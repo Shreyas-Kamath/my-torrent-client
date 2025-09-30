@@ -124,13 +124,13 @@ void PeerConnection::handle_message() {
 
     switch (id) {
         case 0: 
-            std::cout << "Peer choked us\n"; 
+            // std::cout << "Peer choked us\n"; 
             am_choked_ = true;
             break;                         // peer has choked us
 
         case 1: 
             am_choked_ = false;
-            std::cout << "Peer unchoked us\n";
+            // std::cout << "Peer unchoked us\n";
             if (am_interested_) maybe_request_next();
             break;                       // peer has unchoked us
 
@@ -292,14 +292,14 @@ void PeerConnection::handle_piece(const std::vector<unsigned char>& payload) {
 
 void PeerConnection::maybe_request_next() {
     while (!am_choked_ && in_flight_blocks_ < max_in_flight_blocks) {
-        auto piece_index = piece_manager_.fetch_next_piece(peer_bitfield_);
-        if (!piece_index.has_value()) break;
-
-        if (auto offset = piece_manager_.next_block_offset(piece_index.value())) {
-        //     std::cout << "Requesting piece " << piece_index.value()
-        //   << " offset " << offset.value() << "\n";
-            ++in_flight_blocks_;            
-            send_request(piece_index.value(), offset.value(), std::min(16384, (int)piece_manager_.piece_length_for_index(piece_index.value()) - offset.value()));
-        } else continue;
+        if (auto req = piece_manager_.next_block_request(peer_bitfield_)) {
+            ++in_flight_blocks_;
+            const auto& [piece_index, offset] = req.value();
+            send_request(
+                piece_index,
+                offset,
+                std::min(16384, (int)piece_manager_.piece_length_for_index(piece_index) - offset)
+            );
+        } else break;
     }
 }

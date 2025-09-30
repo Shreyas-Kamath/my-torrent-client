@@ -57,10 +57,10 @@ std::vector<Peer> UdpTracker::announce(const std::array<uint8_t, 20>& infoHash, 
             uint32_t a_tx = read_be32(announce_resp.data() + 4);
             if (a_action != 1 || a_tx != announce_tx) continue;
 
-            size_t peer_blob_size = announce_resp.size() - 20;
-            std::cout << "Announce response length: " << announce_resp.size()
-                      << ", peer blob size: " << peer_blob_size
-                      << ", expected peers (peer_blob_size/6): " << peer_blob_size / 6 << "\n";
+            // size_t peer_blob_size = announce_resp.size() - 20;
+            // std::cout << "Announce response length: " << announce_resp.size()
+            //           << ", peer blob size: " << peer_blob_size
+            //           << ", expected peers (peer_blob_size/6): " << peer_blob_size / 6 << "\n";
 
             std::vector<unsigned char> peer_blob(announce_resp.begin() + 20, announce_resp.end());
             size_t num_peers = peer_blob.size() / 6;

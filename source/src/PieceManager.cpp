@@ -39,7 +39,7 @@ void PieceManager::add_block(int piece_index, int begin, const unsigned char* bl
 
         if (!piece.block_received[block_index]) {
             std::copy(block, block + size, piece.data.begin() + begin);
-            piece.block_received[block_index] = true;
+            piece.block_received.set(block_index);
             piece.bytes_written += size;
 
             // size_t received_blocks = std::count(piece.block_received.begin(), piece.block_received.end(), true);
@@ -47,7 +47,7 @@ void PieceManager::add_block(int piece_index, int begin, const unsigned char* bl
             // << ": received block " << block_index
             // << " (" << received_blocks << "/" << piece.block_received.size() << " blocks)\n";
 
-            if (std::all_of(piece.block_received.begin(), piece.block_received.end(), [](bool b) { return b; }) && !piece.is_complete) 
+            if (piece.block_received.all() && !piece.is_complete) 
             {
                 if (verify_hash(piece_index, piece.data)) {
                     piece.is_complete = true;
@@ -128,30 +128,19 @@ void PieceManager::init_files(const std::vector<TorrentFile>& files) {
     total_length_ = offset;
 }
 
-std::optional<int> PieceManager::fetch_next_piece(const boost::dynamic_bitset<>& peer_bitfield) {
+std::optional<std::pair<int, int>> PieceManager::next_block_request(const boost::dynamic_bitset<>& peer_bitfield) {
     std::scoped_lock<std::mutex> lock(piece_mutex_);
 
     for (int i = 0; i < pieces_.size(); ++i) {
-        maybe_init(i);
         if (!pieces_[i].is_complete && peer_bitfield.test(i)) {
-            // at least one unrequested block
-            auto& blocks = pieces_[i].block_requested;
-            if (std::any_of(blocks.begin(), blocks.end(), [](bool b){ return !b; })) return i;
-        }
-    }
-    return std::nullopt;
-}
-
-std::optional<int> PieceManager::next_block_offset(int piece_index) {
-    std::scoped_lock<std::mutex> lock(piece_mutex_);
-    auto& piece = pieces_[piece_index];
-
-    if (piece.is_complete) return std::nullopt;
-
-    for (int i = 0; i < piece.block_received.size(); ++i) {
-        if (!piece.block_received[i] && !piece.block_requested[i]) {
-            mark_block_requested(piece_index, i * 16384);
-            return i * 16384;
+            maybe_init(i);
+            auto& piece = pieces_[i];
+            for (int j = 0; j < piece.block_received.size(); ++j) {
+                if (!piece.block_received[j] && !piece.block_requested[j]) {
+                    mark_block_requested(i, j * 16384);
+                    return std::make_pair(i, j * 16384);
+                }
+            }
         }
     }
     return std::nullopt;
@@ -194,12 +183,13 @@ void PieceManager::writer_thread_func() {
             // clear data
             {
                 std::scoped_lock<std::mutex> lock(piece_mutex_);
-                pieces_[front].data.clear();
-                pieces_[front].data.shrink_to_fit();
-                pieces_[front].block_received.clear();
-                pieces_[front].block_received.shrink_to_fit();
-                pieces_[front].block_requested.clear();
-                pieces_[front].block_requested.shrink_to_fit();
+                auto& piece = pieces_[front];
+                piece.data.clear();
+                piece.data.shrink_to_fit();
+                piece.block_received.clear();
+                piece.block_received.shrink_to_fit();
+                piece.block_requested.clear();
+                piece.block_requested.shrink_to_fit();
             }
             lock.lock();
         }
