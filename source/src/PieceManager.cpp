@@ -1,9 +1,14 @@
 #include <PieceManager.hpp>
+#include <PeerConnection.hpp>
 
 PieceManager::~PieceManager() {
     stop_writer_ = true;
     write_cv_.notify_all();
     if (writer_thread_.joinable()) writer_thread_.join();
+
+    stop_timeout_ = true;
+    timeout_cv_.notify_all();
+    if (timeout_thread_.joinable()) timeout_thread_.join();
 }
 
 void PieceManager::load_resume_data() {
@@ -34,20 +39,19 @@ void PieceManager::save_resume_data(int piece_index) {
 void PieceManager::add_block(int piece_index, int begin, const unsigned char* block, size_t size) {
         std::scoped_lock<std::mutex> lock(piece_mutex_);
         auto& piece = pieces_[piece_index];
-
+        if (piece.is_complete) return;
+        
         auto block_index = begin / 16384; // find out which block has arrived
 
-        if (!piece.block_received[block_index]) {
-            std::copy(block, block + size, piece.data.begin() + begin);
-            piece.block_received.set(block_index);
-            piece.bytes_written += size;
-
+        std::copy(block, block + size, piece.data.begin() + begin);
+        piece.block_status[block_index] = BlockState::Received;
+        piece.bytes_written += size;
             // size_t received_blocks = std::count(piece.block_received.begin(), piece.block_received.end(), true);
             // std::cout << "Piece " << piece_index 
             // << ": received block " << block_index
             // << " (" << received_blocks << "/" << piece.block_received.size() << " blocks)\n";
 
-            if (piece.block_received.all() && !piece.is_complete) 
+            if (std::ranges::all_of(piece.block_status, [](auto b) { return b == BlockState::Received; }) && !piece.is_complete) 
             {
                 if (verify_hash(piece_index, piece.data)) {
                     piece.is_complete = true;
@@ -64,7 +68,6 @@ void PieceManager::add_block(int piece_index, int begin, const unsigned char* bl
                 }
             }
         }
-    }
 
 bool PieceManager::verify_hash(int index, const std::vector<unsigned char>& data) {
         unsigned char digest[SHA_DIGEST_LENGTH];
@@ -128,16 +131,18 @@ void PieceManager::init_files(const std::vector<TorrentFile>& files) {
     total_length_ = offset;
 }
 
-std::optional<std::pair<int, int>> PieceManager::next_block_request(const boost::dynamic_bitset<>& peer_bitfield) {
+std::optional<std::pair<int, int>> PieceManager::next_block_request(const boost::dynamic_bitset<>& peer_bitfield, std::chrono::steady_clock::time_point sent_time, std::weak_ptr<PeerConnection> peer) {
     std::scoped_lock<std::mutex> lock(piece_mutex_);
 
     for (int i = 0; i < pieces_.size(); ++i) {
         if (!pieces_[i].is_complete && peer_bitfield.test(i)) {
             maybe_init(i);
             auto& piece = pieces_[i];
-            for (int j = 0; j < piece.block_received.size(); ++j) {
-                if (!piece.block_received[j] && !piece.block_requested[j]) {
-                    mark_block_requested(i, j * 16384);
+            for (int j = 0; j < piece.block_status.size(); ++j) {
+                if (piece.block_status[j] == BlockState::NotRequested) {
+                    piece.block_status[j] = BlockState::Requested;
+                    piece.in_flight_blocks[j].peer = peer;              // not sure if this is best
+                    piece.in_flight_blocks[j].sent_time = sent_time;    // maybe we should do it AFTER sending the request?
                     return std::make_pair(i, j * 16384);
                 }
             }
@@ -146,20 +151,15 @@ std::optional<std::pair<int, int>> PieceManager::next_block_request(const boost:
     return std::nullopt;
 }
 
-void PieceManager::mark_block_requested(int piece_index, int offset) {
-    auto& piece = pieces_[piece_index];
-    piece.block_requested[offset / 16384] = true;
-}
-
 void PieceManager::maybe_init(int piece_index) {
-            // lazy init
+        // lazy init
         auto& piece = pieces_[piece_index];
         if (piece.data.empty()) {
             auto curr_length = piece_length_for_index(piece_index);
             piece.data.resize(curr_length);  // allocate full size buffer
             size_t num_blocks = (curr_length + 16383) / 16384;
-            piece.block_received.resize(num_blocks, false);
-            piece.block_requested.resize(num_blocks, false);
+            piece.block_status.resize(num_blocks, BlockState::NotRequested);
+            piece.in_flight_blocks.resize(num_blocks);
         }
 }
 
@@ -184,14 +184,42 @@ void PieceManager::writer_thread_func() {
             {
                 std::scoped_lock<std::mutex> lock(piece_mutex_);
                 auto& piece = pieces_[front];
+                piece.is_complete = true;
                 piece.data.clear();
                 piece.data.shrink_to_fit();
-                piece.block_received.clear();
-                piece.block_received.shrink_to_fit();
-                piece.block_requested.clear();
-                piece.block_requested.shrink_to_fit();
+                piece.block_status.clear();
+                piece.block_status.shrink_to_fit();
+                piece.in_flight_blocks.clear();
+                piece.in_flight_blocks.shrink_to_fit();
             }
             lock.lock();
+        }
+    }
+}
+
+void PieceManager::timeout_thread_func() {
+    while (!stop_timeout_) {
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+
+        std::scoped_lock lock(piece_mutex_);
+        // std::cout << "Checking for timeouts\n";
+        for (auto& piece : pieces_) {
+            if (piece.is_complete) continue;
+
+            for (size_t i = 0; i < piece.block_status.size(); ++i) {
+                if (piece.block_status[i] == BlockState::Requested) {
+                    auto now = std::chrono::steady_clock::now();
+                    if (now - piece.in_flight_blocks[i].sent_time > std::chrono::seconds(5)) {
+                        piece.block_status[i] = BlockState::NotRequested;
+
+                        if (auto peer = piece.in_flight_blocks[i].peer.lock()) {
+                            peer->decrement_inflight_blocks(); // safely reduce peer in-flight count
+                        }
+
+                        piece.in_flight_blocks[i] = {}; // reset
+                    }
+                }
+            }
         }
     }
 }

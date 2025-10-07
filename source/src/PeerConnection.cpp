@@ -8,9 +8,9 @@ void PeerConnection::start() {
     socket_.async_connect(endpoint,
         [self](boost::system::error_code ec) {
             if (ec) {
-                std::cerr << "Failed to connect to "
-                          << self->peer_.ip() << ":" << self->peer_.port()
-                          << " -> " << ec.message() << "\n";
+                // std::cerr << "Failed to connect to "
+                //           << self->peer_.ip() << ":" << self->peer_.port()
+                //           << " -> " << ec.message() << "\n";
             } else {
                 // std::cout << "Connected to "
                 //           << self->peer_.ip() << ":" << self->peer_.port() << "\n";
@@ -288,11 +288,13 @@ void PeerConnection::handle_piece(const std::vector<unsigned char>& payload) {
     // try storing the block now
     --in_flight_blocks_;
     piece_manager_.add_block(piece_index, begin, payload.data() + 8, payload.size() - 8);
+    maybe_request_next();
 }
 
 void PeerConnection::maybe_request_next() {
     while (!am_choked_ && in_flight_blocks_ < max_in_flight_blocks) {
-        if (auto req = piece_manager_.next_block_request(peer_bitfield_)) {
+        auto now = std::chrono::steady_clock::now();
+        if (auto req = piece_manager_.next_block_request(peer_bitfield_, now, weak_from_this())) {
             ++in_flight_blocks_;
             const auto& [piece_index, offset] = req.value();
             send_request(
@@ -302,4 +304,8 @@ void PeerConnection::maybe_request_next() {
             );
         } else break;
     }
+}
+
+void PeerConnection::decrement_inflight_blocks() {
+    this->in_flight_blocks_ -= 1;
 }

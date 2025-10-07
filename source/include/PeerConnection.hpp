@@ -29,6 +29,7 @@ public:
           }
 
     void start();
+    void decrement_inflight_blocks();
 
 private:
     void do_handshake();                                                    //
@@ -41,7 +42,6 @@ private:
 
     std::array<char, 68> handshake_buf_; // 68 byte handshake               //
     PieceManager& piece_manager_;
-
 
     // -- Download data --
 

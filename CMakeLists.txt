@@ -3,6 +3,7 @@ project(my_torrent_client)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_BUILD_TYPE Debug)
 
 find_package(OpenSSL REQUIRED)
 find_package(Boost COMPONENTS beast asio REQUIRED)
