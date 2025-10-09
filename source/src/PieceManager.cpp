@@ -36,16 +36,16 @@ void PieceManager::save_resume_data(int piece_index) {
     out.write(reinterpret_cast<const char*>(&piece_index), sizeof(int));
 }
 
-void PieceManager::add_block(int piece_index, int begin, const unsigned char* block, size_t size) {
+void PieceManager::add_block(int piece_index, int begin, const std::span<const unsigned char> block) {
         std::scoped_lock<std::mutex> lock(piece_mutex_);
         auto& piece = pieces_[piece_index];
         if (piece.is_complete) return;
         
         auto block_index = begin / 16384; // find out which block has arrived
 
-        std::copy(block, block + size, piece.data.begin() + begin);
+        std::copy(block.begin(), block.end(), piece.data.begin() + begin);
         piece.block_status[block_index] = BlockState::Received;
-        piece.bytes_written += size;
+        piece.bytes_written += block.size();
             // size_t received_blocks = std::count(piece.block_received.begin(), piece.block_received.end(), true);
             // std::cout << "Piece " << piece_index 
             // << ": received block " << block_index
@@ -57,14 +57,15 @@ void PieceManager::add_block(int piece_index, int begin, const unsigned char* bl
                     piece.is_complete = true;
                     {
                         std::lock_guard<std::mutex> lock(write_mutex_);
-                        std::cout << "Piece " << piece_index << " written\n";
+                        std::cout << "Piece " << piece_index << " completed\n";
                         completed_pieces_.push(piece_index);
                     }
                     write_cv_.notify_one();
                     save_resume_data(piece_index);
                 } else {
                     std::cerr << "Hash mismatch for piece " << piece_index << " (discarding)\n";
-                    piece = PieceBuffer{}; // reset
+                    piece.data.clear();
+                    maybe_init(piece_index);
                 }
             }
         }
@@ -160,6 +161,7 @@ void PieceManager::maybe_init(int piece_index) {
             size_t num_blocks = (curr_length + 16383) / 16384;
             piece.block_status.resize(num_blocks, BlockState::NotRequested);
             piece.in_flight_blocks.resize(num_blocks);
+            piece.bytes_written = 0;
         }
 }
 
@@ -202,13 +204,12 @@ void PieceManager::timeout_thread_func() {
         std::this_thread::sleep_for(std::chrono::seconds(2));
 
         std::scoped_lock lock(piece_mutex_);
+        auto now = std::chrono::steady_clock::now();
         // std::cout << "Checking for timeouts\n";
         for (auto& piece : pieces_) {
             if (piece.is_complete) continue;
-
             for (size_t i = 0; i < piece.block_status.size(); ++i) {
                 if (piece.block_status[i] == BlockState::Requested) {
-                    auto now = std::chrono::steady_clock::now();
                     if (now - piece.in_flight_blocks[i].sent_time > std::chrono::seconds(5)) {
                         piece.block_status[i] = BlockState::NotRequested;
 

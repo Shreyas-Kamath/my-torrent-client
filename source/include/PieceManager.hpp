@@ -48,7 +48,7 @@ public:
     
     ~PieceManager();
 
-    void add_block(int piece_index, int begin, const unsigned char* block, size_t size);
+    void add_block(int piece_index, int begin, std::span<const unsigned char>);
     size_t piece_length_for_index(int piece_index) const;
     void init_files(const std::vector<TorrentFile>& files);
 

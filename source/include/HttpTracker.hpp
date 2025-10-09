@@ -18,7 +18,7 @@ class HttpTracker : public BaseTracker {
 public:
     HttpTracker(const std::string& url) : BaseTracker(url) {}
 
-    std::vector<Peer> announce(const std::array<uint8_t, 20>& infoHash, const std::string& peerId) override;
+    TrackerResponse announce(const std::array<uint8_t, 20>& infoHash, const std::string& peerId) override;
 
     std::string protocol() const override { return "http"; }
 };

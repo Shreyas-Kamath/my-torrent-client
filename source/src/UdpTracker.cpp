@@ -1,6 +1,7 @@
 #include <UdpTracker.hpp>
 
-std::vector<Peer> UdpTracker::announce(const std::array<uint8_t, 20>& infoHash, const std::string& peerId) {
+TrackerResponse UdpTracker::announce(const std::array<uint8_t, 20>& infoHash, const std::string& peerId) {
+    uint32_t interval{};
     try {
         ParsedUrl p = parse_url(trackerUrl);
         const std::string host = p.host;
@@ -57,6 +58,8 @@ std::vector<Peer> UdpTracker::announce(const std::array<uint8_t, 20>& infoHash, 
             uint32_t a_tx = read_be32(announce_resp.data() + 4);
             if (a_action != 1 || a_tx != announce_tx) continue;
 
+            interval = read_be32(announce_resp.data() + 8);
+
             // size_t peer_blob_size = announce_resp.size() - 20;
             // std::cout << "Announce response length: " << announce_resp.size()
             //           << ", peer blob size: " << peer_blob_size
@@ -76,7 +79,7 @@ std::vector<Peer> UdpTracker::announce(const std::array<uint8_t, 20>& infoHash, 
             if (!peers.empty()) break; // stop retries if we got peers
         }
 
-        return peers;
+        return { peers, interval };
 
     } catch (const std::exception& e) {
         std::cerr << "UdpTracker announce exception: " << e.what() << "\n";

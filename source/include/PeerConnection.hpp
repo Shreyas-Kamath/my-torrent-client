@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include <queue>
+#include <span>
 
 #include <Peer.hpp>
 #include <PieceManager.hpp>
@@ -53,18 +54,18 @@ private:
     void handle_message();
     void send_interested();
     void send_request(int piece_index, int offset, int length);
-    void handle_have(const std::vector<unsigned char>& payload);
+    void handle_have(const std::span<const unsigned char> payload);
 
-    void handle_bitfield(const std::vector<unsigned char>& payload);
-    void set_bitfield(const std::vector<unsigned char>& payload);
+    void handle_bitfield(const std::span<const unsigned char> payload);
+    void set_bitfield(const std::span<const unsigned char> payload);
     bool peer_has_needed_piece();
-    void handle_piece(const std::vector<unsigned char>& payload);
+    void handle_piece(const std::span<const unsigned char> payload);
     void maybe_request_next();
 
     // Buffers
 
     std::array<char, 4> length_buf_; // 4 byte length prefix
-    std::vector<char> msg_buf_; // Variable length message body
+    std::vector<unsigned char> msg_buf_; // Variable length message body
 
     // Peer state
     bool am_choked_ = true;

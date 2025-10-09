@@ -120,7 +120,7 @@ void PeerConnection::handle_message() {
     if (msg_buf_.empty()) return;
 
     uint8_t id = static_cast<uint8_t>(msg_buf_[0]);
-    std::vector<unsigned char> payload(msg_buf_.begin() + 1, msg_buf_.end());
+    std::span<const unsigned char> payload(msg_buf_.data() + 1, msg_buf_.size() - 1);
 
     switch (id) {
         case 0: 
@@ -164,8 +164,8 @@ void PeerConnection::send_interested() {
                 std::cerr << "Failed to send interested: " << ec.message() << "\n";
                 return;
             }
-            std::cout << "Sent interested to "
-                      << self->peer_.ip() << ":" << self->peer_.port() << "\n";
+            // std::cout << "Sent interested to "
+            //           << self->peer_.ip() << ":" << self->peer_.port() << "\n";
         });
 }
 
@@ -215,7 +215,7 @@ void PeerConnection::send_request(int piece_index, int begin, int length) {
 }
 
 
-void PeerConnection::handle_have(const std::vector<unsigned char>& payload) {
+void PeerConnection::handle_have(const std::span<const unsigned char> payload) {
     if (payload.size() < 4) return;
 
     int piece_index =
@@ -239,7 +239,7 @@ void PeerConnection::handle_have(const std::vector<unsigned char>& payload) {
     maybe_request_next();
 }
 
-void PeerConnection::handle_bitfield(const std::vector<unsigned char>& payload) {
+void PeerConnection::handle_bitfield(const std::span<const unsigned char> payload) {
     set_bitfield(payload);
 
     if (!am_interested_ && peer_has_needed_piece()) {
@@ -259,7 +259,7 @@ bool PeerConnection::peer_has_needed_piece() {
     return false;
 }
 
-void PeerConnection::set_bitfield(const std::vector<unsigned char>& payload) {
+void PeerConnection::set_bitfield(const std::span<const unsigned char> payload) {
     for (size_t i = 0; i < payload.size(); ++i) {
         for (int bit = 7; bit >= 0; --bit) {
             if ((payload[i] >> bit) & 1) {
@@ -270,7 +270,7 @@ void PeerConnection::set_bitfield(const std::vector<unsigned char>& payload) {
     }
 }
 
-void PeerConnection::handle_piece(const std::vector<unsigned char>& payload) {
+void PeerConnection::handle_piece(const std::span<const unsigned char> payload) {
     if (payload.size() < 8) {
         std::cerr << "Invalid piece payload\n";
         return;
@@ -287,7 +287,7 @@ void PeerConnection::handle_piece(const std::vector<unsigned char>& payload) {
 
     // try storing the block now
     --in_flight_blocks_;
-    piece_manager_.add_block(piece_index, begin, payload.data() + 8, payload.size() - 8);
+    piece_manager_.add_block(piece_index, begin, payload.subspan(8));
     maybe_request_next();
 }
 
