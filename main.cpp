@@ -1,4 +1,6 @@
 #include <iostream>
+#include <csignal>
+#include <atomic>
 
 #include <Utils.hpp>
 #include <Bencode.hpp>
@@ -6,6 +8,12 @@
 #include <TrackerFactory.hpp>
 #include <Peer.hpp>
 #include <PeerConnection.hpp>
+
+std::atomic<bool> stop_signal{ false };
+
+void signal_handler(int) {
+    stop_signal = true;
+}
 
 int main(int argc, char* argv[]) {
     if (argc != 2) {
@@ -63,5 +71,16 @@ int main(int argc, char* argv[]) {
     };
 
     announce_fn();  // start first announce
-    io.run();
+    std::signal(SIGINT, signal_handler);
+
+    while (!stop_signal) { io.run_one(); }  
+    std::cout << "Shutting down...\n";
+
+    announce_timer->cancel();
+    io.stop(); // stop new work first
+
+    for (auto& conn : connections) {
+        conn->stop();
+    }
+
 }

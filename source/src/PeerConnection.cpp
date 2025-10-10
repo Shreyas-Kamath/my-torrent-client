@@ -19,6 +19,14 @@ void PeerConnection::start() {
         });
 }
 
+void PeerConnection::stop() {
+    boost::system::error_code ec;
+
+    if (socket_.is_open()) {
+        socket_.close(ec);
+    }
+}
+
 void PeerConnection::do_handshake() {
     auto self = shared_from_this();
     

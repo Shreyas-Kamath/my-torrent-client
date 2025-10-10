@@ -14,7 +14,7 @@ PieceManager::~PieceManager() {
 void PieceManager::load_resume_data() {
     std::ifstream in(save_file_name_, std::ios::binary | std::ios::in);
 
-    int piece_index, piece_count{};
+    int piece_index{}, piece_count{};
     while (in.read(reinterpret_cast<char*>(&piece_index), sizeof(int))) {
         std::cout << "Found piece " << piece_index << "\n";
         auto& curr = pieces_[piece_index];
@@ -23,6 +23,7 @@ void PieceManager::load_resume_data() {
         curr.bytes_written = curr_length;
         curr.is_complete = true;
         ++piece_count;
+
     }
     std::cout << "Found " << piece_count << '/' << num_pieces_ << " pieces\n";
     if (piece_count == num_pieces_) {

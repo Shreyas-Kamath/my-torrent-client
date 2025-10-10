@@ -30,6 +30,7 @@ public:
           }
 
     void start();
+    void stop();
     void decrement_inflight_blocks();
 
 private:
