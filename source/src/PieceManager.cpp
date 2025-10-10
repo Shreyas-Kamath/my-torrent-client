@@ -43,9 +43,12 @@ void PieceManager::add_block(int piece_index, int begin, const std::span<const u
         
         auto block_index = begin / 16384; // find out which block has arrived
 
-        std::copy(block.begin(), block.end(), piece.data.begin() + begin);
-        piece.block_status[block_index] = BlockState::Received;
-        piece.bytes_written += block.size();
+        if (piece.block_status[block_index] != BlockState::Received) {
+            std::copy(block.begin(), block.end(), piece.data.begin() + begin);
+            piece.block_status[block_index] = BlockState::Received;
+            piece.bytes_written += block.size();
+        }
+
             // size_t received_blocks = std::count(piece.block_received.begin(), piece.block_received.end(), true);
             // std::cout << "Piece " << piece_index 
             // << ": received block " << block_index
@@ -65,6 +68,9 @@ void PieceManager::add_block(int piece_index, int begin, const std::span<const u
                 } else {
                     std::cerr << "Hash mismatch for piece " << piece_index << " (discarding)\n";
                     piece.data.clear();
+                    piece.block_status.clear();
+                    piece.in_flight_blocks.clear();
+                    piece.bytes_written = 0;
                     maybe_init(piece_index);
                 }
             }
@@ -156,6 +162,7 @@ void PieceManager::maybe_init(int piece_index) {
         // lazy init
         auto& piece = pieces_[piece_index];
         if (piece.data.empty()) {
+            piece.is_complete = false;
             auto curr_length = piece_length_for_index(piece_index);
             piece.data.resize(curr_length);  // allocate full size buffer
             size_t num_blocks = (curr_length + 16383) / 16384;
@@ -203,10 +210,10 @@ void PieceManager::timeout_thread_func() {
     while (!stop_timeout_) {
         std::this_thread::sleep_for(std::chrono::seconds(2));
 
-        std::scoped_lock lock(piece_mutex_);
         auto now = std::chrono::steady_clock::now();
         // std::cout << "Checking for timeouts\n";
         for (auto& piece : pieces_) {
+            std::scoped_lock lock(piece_mutex_);
             if (piece.is_complete) continue;
             for (size_t i = 0; i < piece.block_status.size(); ++i) {
                 if (piece.block_status[i] == BlockState::Requested) {
