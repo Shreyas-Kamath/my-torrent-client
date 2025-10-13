@@ -45,7 +45,7 @@ TrackerResponse HttpsTracker::announce(const std::array<uint8_t, 20>& infoHash, 
         http::response<http::dynamic_body> res;
         http::read(stream, buffer, res);
 
-        std::cout << "Received HTTPS tracker response\n";
+        // std::cout << "Received HTTPS tracker response\n";
         std::string body = beast::buffers_to_string(res.body().data());
 
         beast::error_code ec;
@@ -70,7 +70,7 @@ TrackerResponse HttpsTracker::announce(const std::array<uint8_t, 20>& infoHash, 
         return { peers, interval };
 
     } catch (std::exception const& e) {
-        std::cerr << "HttpsTracker error: " << e.what() << std::endl;
+        // std::cerr << "HttpsTracker error: " << e.what() << std::endl;
     }
     return {};
 }

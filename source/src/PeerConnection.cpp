@@ -8,9 +8,8 @@ void PeerConnection::start() {
     socket_.async_connect(endpoint,
         [self](boost::system::error_code ec) {
             if (ec) {
-                // std::cerr << "Failed to connect to "
-                //           << self->peer_.ip() << ":" << self->peer_.port()
-                //           << " -> " << ec.message() << "\n";
+                // close connection
+                self->stop();
             } else {
                 // std::cout << "Connected to "
                 //           << self->peer_.ip() << ":" << self->peer_.port() << "\n";
@@ -40,31 +39,36 @@ void PeerConnection::do_handshake() {
     boost::asio::async_write(socket_,
         boost::asio::buffer(handshake_buf_),
         [self](boost::system::error_code ec, std::size_t bytes) {
-            self->on_handshake(ec, bytes);
+            if (ec) {
+                self->stop();
+                return;
+            }
+            else self->on_handshake(ec, bytes);
         });
 }
 
 void PeerConnection::on_handshake(boost::system::error_code ec, std::size_t bytes) {
     if (ec) {
-        std::cerr << "Handshake send failed: " << ec.message() << "\n";
+        // std::cerr << "Handshake send failed: " << ec.message() << "\n";
         return;
     }
 
     // std::cout << "Handshake sent (" << bytes << " bytes)\n";
+    piece_manager_.add_to_peer_list(weak_from_this());
 
     auto self = shared_from_this();
     boost::asio::async_read(socket_,
         boost::asio::buffer(handshake_buf_),
         [self](boost::system::error_code ec, std::size_t) {
             if (ec) {
-                std::cerr << "Handshake receive failed for: " << self->peer_.ip() << ":" << self->peer_.port() << " - " << ec.message() << "\n";
+                self->stop();
                 return;
             }
 
             // Verify info_hash
             std::string peer_info_hash(self->handshake_buf_.data() + 28, 20);
             if (peer_info_hash != std::string(reinterpret_cast<const char*>(self->info_hash_.data()), 20)) {
-                std::cerr << "Info hash mismatch\n";
+                self->stop();
                 return;
             }
 
@@ -81,12 +85,8 @@ void PeerConnection::read_message_length() {
     boost::asio::async_read(socket_,
         boost::asio::buffer(length_buf_),
         [self](boost::system::error_code ec, std::size_t) {
-            if (ec) {
-                if (ec == boost::asio::error::eof) {
-                    std::cout << "Peer has nothing to send\n";
-                    return;
-                }
-                std::cerr << "Failed to read length: " << ec.message() << "\n";
+            if (ec && ec != boost::asio::error::eof) {
+                self->stop();
                 return;
             }
 
@@ -111,8 +111,8 @@ void PeerConnection::read_message_body(std::size_t length) {
     boost::asio::async_read(socket_,
         boost::asio::buffer(msg_buf_),
         [self, length](boost::system::error_code ec, std::size_t) {
-            if (ec) {
-                std::cerr << "Failed to read body: " << ec.message() << "\n";
+            if (ec && ec != boost::asio::error::eof) {
+                self->stop();
                 return;
             }
 
@@ -169,7 +169,7 @@ void PeerConnection::send_interested() {
     boost::asio::async_write(socket_, boost::asio::buffer(msg),
         [self](boost::system::error_code ec, std::size_t /*bytes*/) {
             if (ec) {
-                std::cerr << "Failed to send interested: " << ec.message() << "\n";
+                self->stop();
                 return;
             }
             // std::cout << "Sent interested to "
@@ -212,14 +212,14 @@ void PeerConnection::send_request(int piece_index, int begin, int length) {
     boost::asio::async_write(socket_, boost::asio::buffer(msg),
         [self, piece_index, begin, length](boost::system::error_code ec, std::size_t /*bytes*/) {
             if (ec) {
-                std::cerr << "Failed to send request: " << ec.message() << "\n";
+                self->stop();
                 return;
             }
             // std::cout << "Sent request -> piece " << piece_index
             //           << ", begin " << begin
             //           << ", length " << length << "\n";
         });
-        ++in_flight_blocks_;   
+        in_flight_blocks_.fetch_add(1, std::memory_order_relaxed);  
 }
 
 
@@ -294,7 +294,7 @@ void PeerConnection::handle_piece(const std::span<const unsigned char> payload) 
     //           << " length " << block.size() << "\n";
 
     // try storing the block now
-    --in_flight_blocks_;
+    in_flight_blocks_.fetch_sub(1, std::memory_order_relaxed);
     piece_manager_.add_block(piece_index, begin, payload.subspan(8));
     maybe_request_next();
 }
@@ -303,7 +303,6 @@ void PeerConnection::maybe_request_next() {
     while (!am_choked_ && in_flight_blocks_ < max_in_flight_blocks) {
         auto now = std::chrono::steady_clock::now();
         if (auto req = piece_manager_.next_block_request(peer_bitfield_, now, weak_from_this())) {
-            ++in_flight_blocks_;
             const auto& [piece_index, offset] = req.value();
             send_request(
                 piece_index,
@@ -315,5 +314,25 @@ void PeerConnection::maybe_request_next() {
 }
 
 void PeerConnection::decrement_inflight_blocks() {
-    this->in_flight_blocks_ -= 1;
+    in_flight_blocks_.fetch_sub(1, std::memory_order_relaxed);
 }
+
+void PeerConnection::signal_have(int piece_index) {
+    auto self = shared_from_this();
+
+    std::array<unsigned char, 9> msg{};
+
+    uint32_t len = boost::endian::native_to_big(5);
+    uint32_t index = boost::endian::native_to_big(piece_index);
+
+    std::memcpy(msg.data(), &len, 4);
+    msg[4] = 4;
+    std::memcpy(msg.data() + 5, &index, 4);
+
+    boost::asio::async_write(socket_, boost::asio::buffer(msg),
+        [self, piece_index](boost::system::error_code ec, size_t bytes) {
+            if (ec) return;
+        }
+    );
+
+} 

@@ -15,17 +15,18 @@ void PieceManager::load_resume_data() {
     std::ifstream in(save_file_name_, std::ios::binary | std::ios::in);
 
     int piece_index{}, piece_count{};
+
     while (in.read(reinterpret_cast<char*>(&piece_index), sizeof(int))) {
-        std::cout << "Found piece " << piece_index << "\n";
         auto& curr = pieces_[piece_index];
         auto curr_length = piece_length_for_index(piece_index);
 
         curr.bytes_written = curr_length;
         curr.is_complete = true;
         ++piece_count;
-
     }
+    
     std::cout << "Found " << piece_count << '/' << num_pieces_ << " pieces\n";
+    stats_.completed_pieces.fetch_add(piece_count, std::memory_order_relaxed);
     if (piece_count == num_pieces_) {
         std::cout << "All pieces already downloaded.\nStill missing files? Delete " << save_file_name_ << " and try again.\n";
         exit(0);
@@ -33,49 +34,60 @@ void PieceManager::load_resume_data() {
 }
 
 void PieceManager::save_resume_data(int piece_index) {
+    std::scoped_lock<std::mutex> lock(resume_file_mutex_);
     std::ofstream out(save_file_name_, std::ios::binary | std::ios::out | std::ios::app);
     out.write(reinterpret_cast<const char*>(&piece_index), sizeof(int));
 }
 
 void PieceManager::add_block(int piece_index, int begin, const std::span<const unsigned char> block) {
+    bool piece_completed = false;
+
+    {
         std::scoped_lock<std::mutex> lock(piece_mutex_);
         auto& piece = pieces_[piece_index];
+
         if (piece.is_complete) return;
-        
-        auto block_index = begin / 16384; // find out which block has arrived
+
+        auto block_index = begin / 16384;
 
         if (piece.block_status[block_index] != BlockState::Received) {
             std::copy(block.begin(), block.end(), piece.data.begin() + begin);
             piece.block_status[block_index] = BlockState::Received;
             piece.bytes_written += block.size();
+            stats_.downloaded_bytes += block.size();
         }
 
-            // size_t received_blocks = std::count(piece.block_received.begin(), piece.block_received.end(), true);
-            // std::cout << "Piece " << piece_index 
-            // << ": received block " << block_index
-            // << " (" << received_blocks << "/" << piece.block_received.size() << " blocks)\n";
-
-            if (std::ranges::all_of(piece.block_status, [](auto b) { return b == BlockState::Received; }) && !piece.is_complete) 
-            {
-                if (verify_hash(piece_index, piece.data)) {
-                    piece.is_complete = true;
-                    {
-                        std::lock_guard<std::mutex> lock(write_mutex_);
-                        std::cout << "Piece " << piece_index << " completed\n";
-                        completed_pieces_.push(piece_index);
-                    }
-                    write_cv_.notify_one();
-                    save_resume_data(piece_index);
-                } else {
-                    std::cerr << "Hash mismatch for piece " << piece_index << " (discarding)\n";
-                    piece.data.clear();
-                    piece.block_status.clear();
-                    piece.in_flight_blocks.clear();
-                    piece.bytes_written = 0;
-                    maybe_init(piece_index);
-                }
+        // Check if the piece is now complete
+        if (std::ranges::all_of(piece.block_status, [](auto b) { return b == BlockState::Received; })) {
+            if (verify_hash(piece_index, piece.data)) {
+                piece.is_complete = true;
+                piece_completed = true;
+            } else {
+                // Hash mismatch, reset piece
+                piece.data.clear();
+                piece.block_status.clear();
+                piece.in_flight_blocks.clear();
+                piece.bytes_written = 0;
+                maybe_init(piece_index);
             }
         }
+    }
+
+    // Signal to all peers
+    if (piece_completed) {
+        notify_all_peers(piece_index);
+
+        {
+            std::scoped_lock<std::mutex> lock(write_mutex_);
+            stats_.completed_pieces.fetch_add(1, std::memory_order_relaxed);
+            completed_pieces_.push(piece_index);
+        }
+        write_cv_.notify_one();
+
+        save_resume_data(piece_index);
+    }
+}
+
 
 bool PieceManager::verify_hash(int index, const std::vector<unsigned char>& data) {
         unsigned char digest[SHA_DIGEST_LENGTH];
@@ -85,6 +97,8 @@ bool PieceManager::verify_hash(int index, const std::vector<unsigned char>& data
 }
 
 void PieceManager::write_piece(int piece_index, const std::vector<unsigned char>& data) {
+    std::scoped_lock<std::mutex> file_lock(file_io_mutex_);
+
     size_t piece_offset = piece_index * piece_length_;
     size_t remaining = data.size();
     size_t data_offset = 0;
@@ -178,6 +192,11 @@ bool PieceManager::is_complete(int piece_index) {
     return pieces_[piece_index].is_complete;
 }
 
+void PieceManager::add_to_peer_list(std::weak_ptr<PeerConnection> peer) {
+    std::scoped_lock<std::mutex> lock(peer_list_mutex_);
+    peer_connections.push_back(peer);
+}
+
 void PieceManager::writer_thread_func() {
     while (!stop_writer_) {
         std::unique_lock<std::mutex> lock(write_mutex_);
@@ -209,7 +228,7 @@ void PieceManager::writer_thread_func() {
 
 void PieceManager::timeout_thread_func() {
     while (!stop_timeout_) {
-        std::this_thread::sleep_for(std::chrono::seconds(2));
+        std::this_thread::sleep_for(std::chrono::seconds(1));
 
         auto now = std::chrono::steady_clock::now();
         // std::cout << "Checking for timeouts\n";
@@ -218,9 +237,8 @@ void PieceManager::timeout_thread_func() {
             if (piece.is_complete) continue;
             for (size_t i = 0; i < piece.block_status.size(); ++i) {
                 if (piece.block_status[i] == BlockState::Requested) {
-                    if (now - piece.in_flight_blocks[i].sent_time > std::chrono::seconds(5)) {
+                    if (now - piece.in_flight_blocks[i].sent_time > std::chrono::seconds(3)) {
                         piece.block_status[i] = BlockState::NotRequested;
-
                         if (auto peer = piece.in_flight_blocks[i].peer.lock()) {
                             peer->decrement_inflight_blocks(); // safely reduce peer in-flight count
                         }
@@ -229,6 +247,15 @@ void PieceManager::timeout_thread_func() {
                     }
                 }
             }
+        }
+    }
+}
+
+void PieceManager::notify_all_peers(int piece_index) {
+    std::scoped_lock<std::mutex> lock(peer_list_mutex_);
+    for (auto& peer: peer_connections) {
+        if (auto p = peer.lock()) {
+            p->signal_have(piece_index);
         }
     }
 }

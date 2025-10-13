@@ -73,7 +73,7 @@ TrackerResponse UdpTracker::announce(const std::array<uint8_t, 20>& infoHash, co
                 std::string ip = std::to_string(p[0]) + "." + std::to_string(p[1]) + "." +
                                  std::to_string(p[2]) + "." + std::to_string(p[3]);
                 uint16_t port = (static_cast<uint16_t>(p[4]) << 8) | static_cast<uint16_t>(p[5]);
-                peers.emplace_back(ip, port);
+                peers.emplace_back(boost::asio::ip::make_address(ip), port);
             }
 
             if (!peers.empty()) break; // stop retries if we got peers
@@ -82,7 +82,7 @@ TrackerResponse UdpTracker::announce(const std::array<uint8_t, 20>& infoHash, co
         return { peers, interval };
 
     } catch (const std::exception& e) {
-        std::cerr << "UdpTracker announce exception: " << e.what() << "\n";
+        // std::cerr << "UdpTracker announce exception: " << e.what() << "\n";
     }
 
     return {};

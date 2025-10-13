@@ -2,6 +2,7 @@
 
 #include <boost/asio.hpp>
 #include <boost/dynamic_bitset.hpp>
+#include <boost/endian/conversion.hpp>
 
 #include <memory>
 #include <string>
@@ -32,6 +33,7 @@ public:
     void start();
     void stop();
     void decrement_inflight_blocks();
+    void signal_have(int piece_index);
 
 private:
     void do_handshake();                                                    //
@@ -47,8 +49,8 @@ private:
 
     // -- Download data --
 
-    const int max_in_flight_blocks{500};
-    int in_flight_blocks_{};
+    const int max_in_flight_blocks{20};
+    std::atomic<int> in_flight_blocks_{};
 
     void read_message_length();
     void read_message_body(size_t length);

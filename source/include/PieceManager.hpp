@@ -19,6 +19,7 @@
 #include <ranges>
 
 #include <TorrentFile.hpp>
+#include <Stats.hpp>
 
 #include <boost/dynamic_bitset.hpp>
 
@@ -30,13 +31,18 @@ public:
                  size_t num_pieces,
                  size_t piece_length,
                  const std::vector<std::array<unsigned char, 20>>& piece_hashes,
-                 const std::string& torrent_name)
+                 const std::string& torrent_name,
+                 Stats& stats)
         : total_length_(total_size),
           num_pieces_(num_pieces),
           piece_length_(piece_length),
-          piece_hashes_(std::move(piece_hashes))
+          piece_hashes_(std::move(piece_hashes)),
+          stats_(stats)
     { 
-        pieces_.resize(num_pieces); 
+        pieces_.resize(num_pieces);
+        stats_.total_pieces.store(num_pieces, std::memory_order_relaxed); 
+        stats_.total_size.store(total_length_, std::memory_order_relaxed);
+
         std::cout << num_pieces << " pieces found.\n";
         writer_thread_ = std::thread(&PieceManager::writer_thread_func, this);
         timeout_thread_ = std::thread(&PieceManager::timeout_thread_func, this);
@@ -58,11 +64,14 @@ public:
     bool is_complete(int piece_index);
 
     size_t num_pieces_;
+
+    void add_to_peer_list(std::weak_ptr<PeerConnection> peer); // peer list
     
 private:
     std::string save_file_name_;
 
     // read resume data if available
+    std::mutex resume_file_mutex_;
     void load_resume_data();
     void save_resume_data(int piece_index);
 
@@ -113,4 +122,16 @@ private:
     std::condition_variable timeout_cv_;
 
     void timeout_thread_func();
+
+    // Stats counter
+
+    Stats& stats_;
+
+    // peer list
+    std::mutex peer_list_mutex_;
+    std::vector<std::weak_ptr<PeerConnection>> peer_connections;
+    void notify_all_peers(int piece_index);
+
+    // file i/o
+    std::mutex file_io_mutex_;
 };
