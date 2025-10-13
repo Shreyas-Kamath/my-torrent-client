@@ -70,7 +70,6 @@ Metadata parse_torrent(const std::string& in) {
     auto files_it = info.find("files");
     if (files_it != info.end() && files_it->second.is_list()) {
         // Multi-file torrent
-		int64_t total_size = 0;
 
         for (const auto& fval : files_it->second.as_list()) {
             if (!fval.is_dict()) continue;
@@ -91,8 +90,10 @@ Metadata parse_torrent(const std::string& in) {
 
             // Length
             auto len_it = fdict.find("length");
-            if (len_it != fdict.end() && len_it->second.is_int())
+            if (len_it != fdict.end() && len_it->second.is_int()) {
                 file.length = static_cast<uint64_t>(len_it->second.as_int());
+                meta.total_size += file.length;
+            }
 
             meta.files.push_back(std::move(file));
         }
@@ -102,6 +103,7 @@ Metadata parse_torrent(const std::string& in) {
         auto len_it = info.find("length");
         if (len_it != info.end() && len_it->second.is_int()) {
             meta.files.push_back({ meta.name, static_cast<uint64_t>(len_it->second.as_int()) });
+            meta.total_size += len_it->second.as_int();
         }
     }
 
