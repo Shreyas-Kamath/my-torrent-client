@@ -5,36 +5,29 @@ void PeerConnection::start() {
     auto self = shared_from_this();
 
     tcp::endpoint endpoint(boost::asio::ip::make_address(peer_.ip()), peer_.port());
+    
     socket_.async_connect(endpoint,
         [self](boost::system::error_code ec) {
-            if (ec) {
-                // close connection
-                self->stop();
-            } else {
-                // std::cout << "Connected to "
-                //           << self->peer_.ip() << ":" << self->peer_.port() << "\n";
-                self->do_handshake();
-            }
+            if (ec) self->stop();
+            else self->do_handshake();
         });
 }
 
+// close connection and stop wasting resources
 void PeerConnection::stop() {
     boost::system::error_code ec;
-
-    if (socket_.is_open()) {
-        socket_.close(ec);
-    }
+    if (socket_.is_open()) socket_.close(ec);
 }
 
 void PeerConnection::do_handshake() {
     auto self = shared_from_this();
     
     // Construct handshake message
-    handshake_buf_[0] = 19; // pstrlen
+    handshake_buf_[0] = 19;                                     // pstrlen
     std::memcpy(&handshake_buf_[1], "BitTorrent protocol", 19); // pstr
-    std::memset(&handshake_buf_[20], 0, 8); // reserved
-    std::memcpy(&handshake_buf_[28], info_hash_.data(), 20); // info_hash
-    std::memcpy(&handshake_buf_[48], peer_id_.data(), 20); // peer_id
+    std::memset(&handshake_buf_[20], 0, 8);                     // reserved
+    std::memcpy(&handshake_buf_[28], info_hash_.data(), 20);    // info_hash
+    std::memcpy(&handshake_buf_[48], peer_id_.data(), 20);      // peer_id
 
     boost::asio::async_write(socket_,
         boost::asio::buffer(handshake_buf_),
@@ -48,13 +41,8 @@ void PeerConnection::do_handshake() {
 }
 
 void PeerConnection::on_handshake(boost::system::error_code ec, std::size_t bytes) {
-    if (ec) {
-        // std::cerr << "Handshake send failed: " << ec.message() << "\n";
-        return;
-    }
-
+    if (ec) return;
     // std::cout << "Handshake sent (" << bytes << " bytes)\n";
-    piece_manager_.add_to_peer_list(weak_from_this());
 
     auto self = shared_from_this();
     boost::asio::async_read(socket_,
@@ -76,14 +64,15 @@ void PeerConnection::on_handshake(boost::system::error_code ec, std::size_t byte
             //           << self->peer_.ip() << ":" << self->peer_.port() << "\n";
 
             // try reading response
+            self->piece_manager_.add_to_peer_list(self->weak_from_this());
             self->read_message_length();
         });
 }
 
 void PeerConnection::read_message_length() {
     auto self = shared_from_this();
-    boost::asio::async_read(socket_,
-        boost::asio::buffer(length_buf_),
+
+    boost::asio::async_read(socket_, boost::asio::buffer(length_buf_),
         [self](boost::system::error_code ec, std::size_t) {
             if (ec && ec != boost::asio::error::eof) {
                 self->stop();
@@ -108,8 +97,7 @@ void PeerConnection::read_message_length() {
 
 void PeerConnection::read_message_body(std::size_t length) {
     auto self = shared_from_this();
-    boost::asio::async_read(socket_,
-        boost::asio::buffer(msg_buf_),
+    boost::asio::async_read(socket_, boost::asio::buffer(msg_buf_),
         [self, length](boost::system::error_code ec, std::size_t) {
             if (ec && ec != boost::asio::error::eof) {
                 self->stop();
@@ -155,6 +143,7 @@ void PeerConnection::handle_message() {
     }
 }
 
+// indicate interest to a peer
 void PeerConnection::send_interested() {
     auto self = shared_from_this();
 
@@ -177,6 +166,7 @@ void PeerConnection::send_interested() {
         });
 }
 
+// ask for a block
 void PeerConnection::send_request(int piece_index, int begin, int length) {
     auto self = shared_from_this();
     // std::cout << "Requesting piece " << piece_index << '\n';
@@ -215,14 +205,11 @@ void PeerConnection::send_request(int piece_index, int begin, int length) {
                 self->stop();
                 return;
             }
-            // std::cout << "Sent request -> piece " << piece_index
-            //           << ", begin " << begin
-            //           << ", length " << length << "\n";
         });
         in_flight_blocks_.fetch_add(1, std::memory_order_relaxed);  
 }
 
-
+// peer informs that they have a piece
 void PeerConnection::handle_have(const std::span<const unsigned char> payload) {
     if (payload.size() < 4) return;
 
@@ -247,6 +234,7 @@ void PeerConnection::handle_have(const std::span<const unsigned char> payload) {
     maybe_request_next();
 }
 
+// process bitfield and decide interest
 void PeerConnection::handle_bitfield(const std::span<const unsigned char> payload) {
     set_bitfield(payload);
 
@@ -258,6 +246,7 @@ void PeerConnection::handle_bitfield(const std::span<const unsigned char> payloa
     maybe_request_next();
 }
 
+// condition to check whether sending requests to this peer is redundant
 bool PeerConnection::peer_has_needed_piece() {
     for (size_t i = 0; i < peer_bitfield_.size(); ++i) {
         if (peer_bitfield_.test(i) && !piece_manager_.is_complete(i)) {
@@ -267,6 +256,7 @@ bool PeerConnection::peer_has_needed_piece() {
     return false;
 }
 
+// set a bitfield for my reference, 
 void PeerConnection::set_bitfield(const std::span<const unsigned char> payload) {
     for (size_t i = 0; i < payload.size(); ++i) {
         for (int bit = 7; bit >= 0; --bit) {
@@ -278,6 +268,7 @@ void PeerConnection::set_bitfield(const std::span<const unsigned char> payload) 
     }
 }
 
+// incoming piece
 void PeerConnection::handle_piece(const std::span<const unsigned char> payload) {
     if (payload.size() < 8) {
         std::cerr << "Invalid piece payload\n";
@@ -299,6 +290,7 @@ void PeerConnection::handle_piece(const std::span<const unsigned char> payload) 
     maybe_request_next();
 }
 
+// try request
 void PeerConnection::maybe_request_next() {
     while (!am_choked_ && in_flight_blocks_ < max_in_flight_blocks) {
         auto now = std::chrono::steady_clock::now();
@@ -313,10 +305,12 @@ void PeerConnection::maybe_request_next() {
     }
 }
 
+// confirmation from the piece manager that a block is missed
 void PeerConnection::decrement_inflight_blocks() {
     in_flight_blocks_.fetch_sub(1, std::memory_order_relaxed);
 }
 
+// signal to the peer that I have this piece
 void PeerConnection::signal_have(int piece_index) {
     auto self = shared_from_this();
 
@@ -325,14 +319,13 @@ void PeerConnection::signal_have(int piece_index) {
     uint32_t len = boost::endian::native_to_big(5);
     uint32_t index = boost::endian::native_to_big(piece_index);
 
-    std::memcpy(msg.data(), &len, 4);
-    msg[4] = 4;
-    std::memcpy(msg.data() + 5, &index, 4);
+    std::memcpy(msg.data(), &len, 4);       // length prefix
+    msg[4] = 4;                             // messaage ID -- HAVE
+    std::memcpy(msg.data() + 5, &index, 4); // piece index in big endian
 
     boost::asio::async_write(socket_, boost::asio::buffer(msg),
         [self, piece_index](boost::system::error_code ec, size_t bytes) {
             if (ec) return;
         }
     );
-
 } 

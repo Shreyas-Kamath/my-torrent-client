@@ -88,7 +88,6 @@ void PieceManager::add_block(int piece_index, int begin, const std::span<const u
     }
 }
 
-
 bool PieceManager::verify_hash(int index, const std::vector<unsigned char>& data) {
         unsigned char digest[SHA_DIGEST_LENGTH];
         SHA1(data.data(), data.size(), digest);
@@ -252,10 +251,16 @@ void PieceManager::timeout_thread_func() {
 }
 
 void PieceManager::notify_all_peers(int piece_index) {
-    std::scoped_lock<std::mutex> lock(peer_list_mutex_);
-    for (auto& peer: peer_connections) {
-        if (auto p = peer.lock()) {
-            p->signal_have(piece_index);
+    int peer_count{};
+
+    {
+        std::scoped_lock<std::mutex> lock(peer_list_mutex_);
+        for (auto& peer: peer_connections) {
+            if (auto p = peer.lock()) {
+                ++peer_count;
+                p->signal_have(piece_index);
+            }
         }
     }
+    stats_.connected_peers.store(peer_count);
 }
