@@ -22,6 +22,10 @@ void PieceManager::load_resume_data() {
 
         curr.bytes_written = curr_length;
         curr.is_complete = true;
+
+        // modify my bitfield
+        update_my_bitfield(piece_index);
+
         ++piece_count;
     }
     
@@ -75,6 +79,7 @@ void PieceManager::add_block(int piece_index, int begin, const std::span<const u
 
     // Signal to all peers
     if (piece_completed) {
+        update_my_bitfield(piece_index);
         notify_all_peers(piece_index);
 
         {
@@ -196,6 +201,11 @@ void PieceManager::add_to_peer_list(std::weak_ptr<PeerConnection> peer) {
     peer_connections.push_back(peer);
 }
 
+std::vector<uint8_t> PieceManager::get_my_bitfield() {
+    std::scoped_lock<std::mutex> lock(my_bitfield_mutex_);
+    return my_bitfield_;
+}
+
 void PieceManager::writer_thread_func() {
     while (!stop_writer_) {
         std::unique_lock<std::mutex> lock(write_mutex_);
@@ -263,4 +273,13 @@ void PieceManager::notify_all_peers(int piece_index) {
         }
     }
     stats_.connected_peers.store(peer_count);
+}
+
+void PieceManager::update_my_bitfield(int piece_index) {
+    std::scoped_lock<std::mutex> lock(my_bitfield_mutex_);
+
+    size_t byte = piece_index / 8;
+    size_t bit = piece_index % 8;
+
+    my_bitfield_[byte] |= (1 << (7 - bit));
 }

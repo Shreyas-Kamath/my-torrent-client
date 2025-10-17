@@ -70,10 +70,16 @@ private:
     std::array<char, 4> length_buf_; // 4 byte length prefix
     std::vector<unsigned char> msg_buf_; // Variable length message body
 
-    // Peer state
-    bool am_choked_ = true;
-    bool peer_choked_ = true;
-    bool am_interested_ = false;
+    // my state
+    bool am_choked_{ true };
+    bool am_interested_{ false };
 
     boost::dynamic_bitset<> peer_bitfield_; // Bitfield of pieces the peer has
+
+    // -- Seeder logic --
+    void signal_bitfield();
+
+    // peer state
+    bool peer_choked{ true };
+    bool peer_interested{ false };
 };

@@ -40,16 +40,19 @@ public:
           stats_(stats)
     { 
         pieces_.resize(num_pieces);
+        my_bitfield_.resize((num_pieces + 7) / 8, 0);
+
         stats_.total_pieces.store(num_pieces, std::memory_order_relaxed); 
         stats_.total_size.store(total_length_, std::memory_order_relaxed);
 
         std::cout << num_pieces << " pieces found.\n";
-        writer_thread_ = std::thread(&PieceManager::writer_thread_func, this);
-        timeout_thread_ = std::thread(&PieceManager::timeout_thread_func, this);
         save_file_name_ = torrent_name + ".fastresume";
 
         if (std::filesystem::exists(save_file_name_)) load_resume_data();
         else std::ofstream out(save_file_name_, std::ios::binary | std::ios::trunc);
+
+        writer_thread_ = std::thread(&PieceManager::writer_thread_func, this);
+        timeout_thread_ = std::thread(&PieceManager::timeout_thread_func, this);
     }
     
     ~PieceManager();
@@ -66,6 +69,7 @@ public:
     size_t num_pieces_;
 
     void add_to_peer_list(std::weak_ptr<PeerConnection> peer); // peer list
+    std::vector<uint8_t> get_my_bitfield();
     
 private:
     std::string save_file_name_;
@@ -134,4 +138,9 @@ private:
 
     // file i/o
     std::mutex file_io_mutex_;
+
+    // my bitfield
+    void update_my_bitfield(int piece_index);
+    std::mutex my_bitfield_mutex_;
+    std::vector<uint8_t> my_bitfield_;
 };

@@ -1,5 +1,4 @@
 #include <PeerConnection.hpp>
-#include <iostream>
 
 void PeerConnection::start() {
     auto self = shared_from_this();
@@ -65,6 +64,7 @@ void PeerConnection::on_handshake(boost::system::error_code ec, std::size_t byte
 
             // try reading response
             self->piece_manager_.add_to_peer_list(self->weak_from_this());
+            self->signal_bitfield(); // send my bitfield
             self->read_message_length();
         });
 }
@@ -139,7 +139,7 @@ void PeerConnection::handle_message() {
         case 8: std::cout << "Received cancel\n"; break;                        // received a cancel
         case 9: std::cout << "Received port\n"; break;                          // received a port
 
-        default: std::cerr << "Unknown msg id " << (int)id << "\n"; break;
+        default: std::print("Unknown message id: {}\n", id); break;
     }
 }
 
@@ -329,3 +329,26 @@ void PeerConnection::signal_have(int piece_index) {
         }
     );
 } 
+
+void PeerConnection::signal_bitfield() {
+    auto self = shared_from_this();
+
+    auto my_bitfield = piece_manager_.get_my_bitfield();
+    
+    uint32_t msg_len = boost::endian::native_to_big(1 + my_bitfield.size());
+
+    std::vector<uint8_t> buffer;
+    buffer.reserve(4 + msg_len);
+
+    buffer.insert(buffer.end(), reinterpret_cast<uint8_t*>(&msg_len), reinterpret_cast<uint8_t*>(&msg_len) + 4);
+    buffer.push_back(5); // id = bitfield
+    buffer.insert(buffer.end(), my_bitfield.begin(), my_bitfield.end());
+
+    // move the buffer into the lambda to prevent lifetime issues
+    // and mark the lambda mutable to make the compiler happy
+
+    boost::asio::async_write(socket_, boost::asio::buffer(buffer),
+        [self, buf = std::move(buffer)](boost::system::error_code ec, size_t bytes) mutable {});
+
+    // our job is done, we don't care whether the bitfield reaches the peer or not
+}   
