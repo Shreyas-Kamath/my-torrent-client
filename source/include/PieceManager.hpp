@@ -70,6 +70,8 @@ public:
 
     void add_to_peer_list(std::weak_ptr<PeerConnection> peer); // peer list
     std::vector<uint8_t> get_my_bitfield();
+
+    std::vector<uint8_t> fetch_block(uint32_t piece_index, uint32_t begin, uint32_t length);
     
 private:
     std::string save_file_name_;
@@ -143,4 +145,6 @@ private:
     void update_my_bitfield(int piece_index);
     std::mutex my_bitfield_mutex_;
     std::vector<uint8_t> my_bitfield_;
+
+    std::atomic<bool> is_torrent_complete{ false };
 };

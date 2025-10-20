@@ -30,10 +30,10 @@ void PieceManager::load_resume_data() {
     }
     
     std::cout << "Found " << piece_count << '/' << num_pieces_ << " pieces\n";
-    stats_.completed_pieces.fetch_add(piece_count, std::memory_order_relaxed);
+    stats_.completed_pieces.store(piece_count, std::memory_order_relaxed);
     if (piece_count == num_pieces_) {
-        std::cout << "All pieces already downloaded.\nStill missing files? Delete " << save_file_name_ << " and try again.\n";
-        exit(0);
+        std::print("Torrent is complete. Seeding...\n");
+        is_torrent_complete = true;
     }
 }
 
@@ -58,7 +58,7 @@ void PieceManager::add_block(int piece_index, int begin, const std::span<const u
             std::copy(block.begin(), block.end(), piece.data.begin() + begin);
             piece.block_status[block_index] = BlockState::Received;
             piece.bytes_written += block.size();
-            stats_.downloaded_bytes += block.size();
+            stats_.downloaded_bytes.fetch_add(block.size(), std::memory_order_relaxed);
         }
 
         // Check if the piece is now complete
@@ -158,9 +158,15 @@ void PieceManager::init_files(const std::vector<TorrentFile>& files) {
 }
 
 std::optional<std::pair<int, int>> PieceManager::next_block_request(const boost::dynamic_bitset<>& peer_bitfield, std::chrono::steady_clock::time_point sent_time, std::weak_ptr<PeerConnection> peer) {
+    if (is_torrent_complete) return std::nullopt;
+
     std::scoped_lock<std::mutex> lock(piece_mutex_);
+    int piece_count{};
 
     for (int i = 0; i < pieces_.size(); ++i) {
+        if (pieces_[i].is_complete) ++piece_count;
+        if (piece_count == num_pieces_) is_torrent_complete = true;
+
         if (!pieces_[i].is_complete && peer_bitfield.test(i)) {
             maybe_init(i);
             auto& piece = pieces_[i];
@@ -197,8 +203,47 @@ bool PieceManager::is_complete(int piece_index) {
 }
 
 void PieceManager::add_to_peer_list(std::weak_ptr<PeerConnection> peer) {
-    std::scoped_lock<std::mutex> lock(peer_list_mutex_);
-    peer_connections.push_back(peer);
+    int peer_count{};
+    {
+        std::scoped_lock<std::mutex> lock(peer_list_mutex_);
+        peer_connections.push_back(peer);
+        ++peer_count;
+    }
+    stats_.connected_peers.store(peer_count, std::memory_order_relaxed);
+}
+
+std::vector<uint8_t> PieceManager::fetch_block(uint32_t piece_index, uint32_t begin, uint32_t length) {
+    std::scoped_lock<std::mutex> file_lock(file_io_mutex_);
+
+    std::vector<uint8_t> out(length);
+    size_t piece_offset = piece_index * piece_length_ + begin;
+    size_t remaining = length;
+    size_t data_offset = 0;
+
+    for (const auto& f : files_) {
+        if (piece_offset >= f.start + f.length) continue;
+        if (piece_offset + remaining <= f.start) break;
+
+        size_t file_offset = piece_offset > f.start ? piece_offset - f.start : 0;
+        size_t read_size = std::min(remaining, f.length - file_offset);
+
+        std::ifstream in(f.path, std::ios::binary);
+        if (!in) { 
+            std::print("Failed to open file: {}", f.path);
+            return {};
+        }
+
+        in.seekg(file_offset, std::ios::beg);
+        in.read(reinterpret_cast<char*>(out.data() + data_offset), read_size);
+
+        remaining -= read_size;
+        data_offset += read_size;
+        piece_offset += read_size;
+        stats_.uploaded_bytes.fetch_add(read_size, std::memory_order_relaxed);
+
+        if (remaining == 0) break;
+    }    
+    return out;
 }
 
 std::vector<uint8_t> PieceManager::get_my_bitfield() {
@@ -236,6 +281,8 @@ void PieceManager::writer_thread_func() {
 }
 
 void PieceManager::timeout_thread_func() {
+    if (is_torrent_complete) return;
+
     while (!stop_timeout_) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
 
@@ -262,7 +309,6 @@ void PieceManager::timeout_thread_func() {
 
 void PieceManager::notify_all_peers(int piece_index) {
     int peer_count{};
-
     {
         std::scoped_lock<std::mutex> lock(peer_list_mutex_);
         for (auto& peer: peer_connections) {
@@ -272,7 +318,7 @@ void PieceManager::notify_all_peers(int piece_index) {
             }
         }
     }
-    stats_.connected_peers.store(peer_count);
+    stats_.connected_peers.store(peer_count, std::memory_order_relaxed);
 }
 
 void PieceManager::update_my_bitfield(int piece_index) {

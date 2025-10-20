@@ -18,6 +18,7 @@ public:
     const boost::asio::ip::tcp::endpoint& endpoint() const { return endpoint_; }
 
     std::string ip() const { return endpoint_.address().to_string(); }
+    auto addr() const { return endpoint_.address(); }
     uint16_t port() const { return endpoint_.port(); }
 
     bool operator==(const Peer& other) const {

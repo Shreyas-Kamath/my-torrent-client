@@ -3,7 +3,7 @@
 void PeerConnection::start() {
     auto self = shared_from_this();
 
-    tcp::endpoint endpoint(boost::asio::ip::make_address(peer_.ip()), peer_.port());
+    tcp::endpoint endpoint(peer_.addr(), peer_.port());
     
     socket_.async_connect(endpoint,
         [self](boost::system::error_code ec) {
@@ -120,21 +120,24 @@ void PeerConnection::handle_message() {
 
     switch (id) {
         case 0: 
-            // std::cout << "Peer choked us\n"; 
             am_choked_ = true;
-            break;                         // peer has choked us
+            break;                                                              // peer has choked us
 
         case 1: 
             am_choked_ = false;
-            // std::cout << "Peer unchoked us\n";
             if (am_interested_) maybe_request_next();
-            break;                       // peer has unchoked us
+            break;                                                              // peer has unchoked us
 
-        case 2: std::cout << "Peer is interested\n"; break;                     // peer is interested in our pieces
-        case 3: std::cout << "Peer is not interested\n"; break;                 // peer is not interested in our pieces
+        case 2: 
+            peer_interested = true; 
+            signal_unchoke();
+            break;                                                              // peer is interested in our pieces
+        case 3:
+            peer_interested = false;
+            break;                                                              // peer is not interested in our pieces
         case 4: handle_have(payload); break;                                    // peer has a piece
         case 5: handle_bitfield(payload); break;                                // peer's bitfield
-        case 6: std::cout << "Received request\n"; break;                       // received a request
+        case 6: handle_request(payload); break;                                 // received a request
         case 7: handle_piece(payload); break;                                   // received piece data
         case 8: std::cout << "Received cancel\n"; break;                        // received a cancel
         case 9: std::cout << "Received port\n"; break;                          // received a port
@@ -161,15 +164,12 @@ void PeerConnection::send_interested() {
                 self->stop();
                 return;
             }
-            // std::cout << "Sent interested to "
-            //           << self->peer_.ip() << ":" << self->peer_.port() << "\n";
         });
 }
 
 // ask for a block
 void PeerConnection::send_request(int piece_index, int begin, int length) {
     auto self = shared_from_this();
-    // std::cout << "Requesting piece " << piece_index << '\n';
 
     std::array<char, 17> msg{};
 
@@ -275,18 +275,13 @@ void PeerConnection::handle_piece(const std::span<const unsigned char> payload) 
         return;
     }
 
-    int piece_index =
-        (payload[0] << 24) | (payload[1] << 16) | (payload[2] << 8) | payload[3];
-    int begin =
-        (payload[4] << 24) | (payload[5] << 16) | (payload[6] << 8) | payload[7];
-
-    // std::cout << "Received block: piece " << piece_index
-    //           << " begin " << begin
-    //           << " length " << block.size() << "\n";
+    int piece_index = (payload[0] << 24) | (payload[1] << 16) | (payload[2] << 8) | payload[3];
+    int begin = (payload[4] << 24) | (payload[5] << 16) | (payload[6] << 8) | payload[7];
 
     // try storing the block now
     in_flight_blocks_.fetch_sub(1, std::memory_order_relaxed);
     piece_manager_.add_block(piece_index, begin, payload.subspan(8));
+
     maybe_request_next();
 }
 
@@ -320,7 +315,7 @@ void PeerConnection::signal_have(int piece_index) {
     uint32_t index = boost::endian::native_to_big(piece_index);
 
     std::memcpy(msg.data(), &len, 4);       // length prefix
-    msg[4] = 4;                             // messaage ID -- HAVE
+    msg[4] = 4;                             // message ID -- HAVE
     std::memcpy(msg.data() + 5, &index, 4); // piece index in big endian
 
     boost::asio::async_write(socket_, boost::asio::buffer(msg),
@@ -352,3 +347,53 @@ void PeerConnection::signal_bitfield() {
 
     // our job is done, we don't care whether the bitfield reaches the peer or not
 }   
+
+void PeerConnection::signal_unchoke() {
+    auto self = shared_from_this();
+    peer_choked = false;
+    
+    std::array<uint8_t, 5> msg{};
+
+    uint32_t len = boost::endian::native_to_big(1);
+    std::memcpy(msg.data(), &len, 4);
+    msg[4] = 1; // id = unchoke
+
+    boost::asio::async_write(socket_, boost::asio::buffer(msg),
+        [self](boost::system::error_code ec, size_t bytes) {});
+
+    // again, we don't care if the message is received by the peer or not
+}
+
+// peer is requesting a piece (PIECE_INDEX, OFFSET, LENGTH)
+void PeerConnection::handle_request(const std::span<const unsigned char> payload) {
+    if (payload.size() < 12) return;
+
+    uint32_t piece_index = boost::endian::big_to_native(*reinterpret_cast<const uint32_t*>(payload.data()));
+    uint32_t begin = boost::endian::big_to_native(*reinterpret_cast<const uint32_t*>(payload.data() + 4));
+    uint32_t length = boost::endian::big_to_native(*reinterpret_cast<const uint32_t*>(payload.data() + 8));
+
+    auto block = piece_manager_.fetch_block(piece_index, begin, length);
+    if (block.empty()) return;
+
+    auto self = shared_from_this();
+
+    uint32_t msg_len = boost::endian::native_to_big(9 + block.size());
+
+    std::vector<uint8_t> buffer;
+    buffer.reserve(4 + msg_len);
+
+    buffer.insert(buffer.end(), reinterpret_cast<uint8_t*>(&msg_len), reinterpret_cast<uint8_t*>(&msg_len) + 4);
+    buffer.push_back(7); // id - piece
+
+    uint32_t be_index = boost::endian::native_to_big(piece_index);
+    uint32_t be_begin = boost::endian::native_to_big(begin);
+
+    buffer.insert(buffer.end(), reinterpret_cast<uint8_t*>(&be_index), reinterpret_cast<uint8_t*>(&be_index) + 4);
+    buffer.insert(buffer.end(), reinterpret_cast<uint8_t*>(&be_begin), reinterpret_cast<uint8_t*>(&be_begin) + 4);
+    buffer.insert(buffer.end(), block.begin(), block.end());
+
+    boost::asio::async_write(socket_, boost::asio::buffer(buffer),
+        [self, b = std::move(buffer)](boost::system::error_code ec, size_t bytes) mutable {
+            if (ec) std::print("Block could not be sent\n");
+        });
+}

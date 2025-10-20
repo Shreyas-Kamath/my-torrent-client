@@ -68,7 +68,7 @@ int main(int argc, char* argv[]) {
                     }
                 }
 
-            } catch (const std::exception& e) {
+            } catch (...) {
                 // std::cerr << "Tracker " << url << " failed: " << e.what() << "\n";
             }
         }

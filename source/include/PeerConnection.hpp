@@ -82,4 +82,7 @@ private:
     // peer state
     bool peer_choked{ true };
     bool peer_interested{ false };
+
+    void signal_unchoke();
+    void handle_request(const std::span<const unsigned char> payload);
 };
