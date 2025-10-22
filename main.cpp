@@ -39,24 +39,28 @@ int main(int argc, char* argv[]) {
     boost::asio::io_context io;
     std::vector<std::shared_ptr<PeerConnection>> connections;
 
-    // Trackers for reannounce
-    std::vector<std::string> tracker_urls;
+    // --- Initialize trackers once ---
+    std::vector<std::shared_ptr<BaseTracker>> trackers;
     for (const auto& tier : metadata.announce_list)
-        tracker_urls.insert(tracker_urls.end(), tier.begin(), tier.end());
-
-    auto announce_timer = std::make_shared<boost::asio::steady_timer>(io);
-    auto stats_timer = std::make_shared<boost::asio::steady_timer>(io, std::chrono::seconds(1));
+        for (const auto& url : tier)
+            trackers.push_back(make_tracker(url));
 
     std::unordered_set<Peer, PeerHash> peer_pool;
 
+    // --- Timers ---
+    auto announce_timer = std::make_shared<boost::asio::steady_timer>(io);
+    auto stats_timer = std::make_shared<boost::asio::steady_timer>(io, std::chrono::seconds(1));
+
+    // --- Reusable announce function ---
     std::function<void()> announce_fn;
     announce_fn = [&]() {
-        for (auto& url : tracker_urls) {
-
+        for (auto& tracker : trackers) {
             try {
-                auto tracker = make_tracker(url);
-                auto response = tracker->announce(metadata.info_hash, "-CT0001-123456789012", stats.uploaded_bytes, stats.downloaded_bytes, stats.total_size);
-                // std::cout << "Tracker " << url << " returned " << response.peers.size() << " peers\n";
+                auto response = tracker->announce(metadata.info_hash,
+                                                  "-CT0001-123456789012",
+                                                  stats.uploaded_bytes,
+                                                  stats.downloaded_bytes,
+                                                  stats.total_size);
 
                 for (auto& peer : response.peers) {
                     if (peer_pool.insert(peer).second) {
@@ -68,43 +72,43 @@ int main(int argc, char* argv[]) {
                     }
                 }
 
-            } catch (...) {
-                // std::cerr << "Tracker " << url << " failed: " << e.what() << "\n";
+            } catch (const std::exception& e) {
+                std::cerr << "Tracker " << tracker->name() << " failed: " << e.what() << "\n";
             }
         }
 
-        // Schedule next announce (reannounce) after 30s
+        // Schedule next announce
         announce_timer->expires_after(std::chrono::seconds(120));
         announce_timer->async_wait([&](const boost::system::error_code& ec) {
             if (!ec) announce_fn();
         });
     };
 
+    // --- Stats timer ---
     std::function<void()> stats_fn;
     stats_fn = [&, stats_timer]() {
         stats.display();
-
         stats_timer->expires_after(std::chrono::seconds(1));
         stats_timer->async_wait([&](const boost::system::error_code& ec) {
             if (!ec) stats_fn();
         });
     };
 
-    announce_fn();  // start first announce
-    stats_fn();
-    std::signal(SIGINT, signal_handler);
+    // --- Signal handling ---
+    std::signal(SIGINT, [](int) { stop_signal = true; });
 
-    while (!stop_signal) { io.run_one(); }  
+    announce_fn();  // first announce
+    stats_fn();     // start stats display
 
-    std::cout << "\nShutting down...\n";
-
-    announce_timer->cancel();
-    stats_timer->cancel();
-
-    io.stop(); // stop new work first
-
-    for (auto& conn : connections) {
-        conn->stop();
+    // --- Event loop ---
+    while (!stop_signal) {
+        io.run_one();
     }
 
+    std::cout << "\nShutting down...\n";
+    announce_timer->cancel();
+    stats_timer->cancel();
+    io.stop();
+
+    for (auto& conn : connections) conn->stop();
 }

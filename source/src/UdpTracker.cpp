@@ -91,7 +91,7 @@ TrackerResponse UdpTracker::announce(const std::array<uint8_t, 20>& infoHash, co
         return { peers, interval };
 
     } catch (const std::exception& e) {
-        // std::cerr << "UdpTracker announce exception: " << e.what() << "\n";
+        std::cerr << "UdpTracker announce exception: " << e.what() << "\n";
     }
 
     return {};
