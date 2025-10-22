@@ -1,9 +1,18 @@
 #include <UdpTracker.hpp>
 
-TrackerResponse UdpTracker::announce(const std::array<uint8_t, 20>& infoHash, const std::string& peerId) {
+TrackerResponse UdpTracker::announce(const std::array<uint8_t, 20>& infoHash, const std::string& peerId, const std::atomic<size_t>& uploaded, const std::atomic<size_t>& downloaded, const std::atomic<size_t>& total) {
     uint32_t interval{};
     try {
         ParsedUrl p = parse_url(trackerUrl);
+        uint32_t event = 0;
+
+        auto up = uploaded.load();
+        auto down = downloaded.load();
+        auto tot = total.load();
+
+        if (down == 0) event = 2; // started
+        else if (down >= tot) event = 1; // completed
+
         const std::string host = p.host;
         const std::string port = p.port.empty() ? "6969" : p.port; // fallback
 
@@ -42,10 +51,10 @@ TrackerResponse UdpTracker::announce(const std::array<uint8_t, 20>& infoHash, co
             write_be32(areq, 12, announce_tx);
             std::copy(infoHash.begin(), infoHash.end(), areq.begin() + 16);
             std::copy(peerId.begin(), peerId.begin() + std::min<size_t>(20, peerId.size()), areq.begin() + 36);
-            write_be64(areq, 56, 0); // downloaded
-            write_be64(areq, 64, 0); // left
-            write_be64(areq, 72, 0); // uploaded
-            write_be32(areq, 80, 0); // event
+            write_be64(areq, 56, down); // downloaded
+            write_be64(areq, 64, tot - down); // left
+            write_be64(areq, 72, up); // uploaded
+            write_be32(areq, 80, event); // event
             write_be32(areq, 84, 0); // IP default
             write_be32(areq, 88, rand32()); // key
             write_be32(areq, 92, static_cast<uint32_t>(-1)); // num_want
