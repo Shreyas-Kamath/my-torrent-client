@@ -186,7 +186,8 @@ std::optional<std::pair<int, int>> PieceManager::next_block_request(const boost:
 void PieceManager::maybe_init(int piece_index) {
         // lazy init
         auto& piece = pieces_[piece_index];
-        if (piece.data.empty() && !piece.is_complete) {
+        if (piece.data.empty() /* && !piece.is_complete */) {
+            // if (piece.is_complete) std::print("Duplicate maybe init");
             piece.is_complete = false;
             auto curr_length = piece_length_for_index(piece_index);
             piece.data.resize(curr_length);  // allocate full size buffer

@@ -1,13 +1,28 @@
 #include <HttpTracker.hpp>
 
-TrackerResponse HttpTracker::announce(const std::array<uint8_t, 20>& infoHash, const std::string& peerId)
+TrackerResponse HttpTracker::announce(const std::array<uint8_t, 20>& infoHash, const std::string& peerId, const std::atomic<size_t>& uploaded, const std::atomic<size_t>& downloaded, const std::atomic<size_t>& total)
 {
     try {
         ParsedUrl parsed = parse_url(trackerUrl);
 
-        std::string target = parsed.target + "?info_hash=" + percent_encode(infoHash) +
-                             "&peer_id="   + peerId +
-                             "&port=6881&uploaded=0&downloaded=0&left=0&compact=1";
+        std::string event;
+
+        auto up = uploaded.load();
+        auto down = downloaded.load();
+        auto tot = total.load();
+
+        if (down == 0) event = "started";
+        else if (down >= tot) event = "completed";
+
+        std::string target = parsed.target += 
+            "?info_hash=" + percent_encode(infoHash) +
+            "&peer_id="   + peerId +
+            "&port=6881&uploaded=" + std::to_string(up) + 
+            "&downloaded=" + std::to_string(down) + 
+            "&left=" + std::to_string(tot - down) +
+            "&compact=1";
+            
+        if (!event.empty()) target += "&event=" + event;
 
         net::io_context ioc;
         tcp::resolver resolver(ioc);

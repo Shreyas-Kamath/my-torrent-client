@@ -55,7 +55,7 @@ int main(int argc, char* argv[]) {
 
             try {
                 auto tracker = make_tracker(url);
-                auto response = tracker->announce(metadata.info_hash, "-CT0001-123456789012");
+                auto response = tracker->announce(metadata.info_hash, "-CT0001-123456789012", stats.uploaded_bytes, stats.downloaded_bytes, stats.total_size);
                 // std::cout << "Tracker " << url << " returned " << response.peers.size() << " peers\n";
 
                 for (auto& peer : response.peers) {
