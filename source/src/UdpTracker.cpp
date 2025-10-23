@@ -3,7 +3,6 @@
 TrackerResponse UdpTracker::announce(const std::array<uint8_t, 20>& infoHash, const std::string& peerId, const std::atomic<size_t>& uploaded, const std::atomic<size_t>& downloaded, const std::atomic<size_t>& total) {
     uint32_t interval{};
     try {
-        ParsedUrl p = parse_url(trackerUrl);
         uint32_t event = 0;
 
         auto up = uploaded.load();
@@ -13,8 +12,8 @@ TrackerResponse UdpTracker::announce(const std::array<uint8_t, 20>& infoHash, co
         if (down == 0) event = 2; // started
         else if (down >= tot) event = 1; // completed
 
-        const std::string host = p.host;
-        const std::string port = p.port.empty() ? "6969" : p.port; // fallback
+        const std::string host = parsed.host;
+        const std::string port = parsed.port.empty() ? "6969" : parsed.port; // fallback
 
         boost::asio::io_context io;
         udp::resolver resolver(io);
@@ -68,11 +67,6 @@ TrackerResponse UdpTracker::announce(const std::array<uint8_t, 20>& infoHash, co
             if (a_action != 1 || a_tx != announce_tx) continue;
 
             interval = read_be32(announce_resp.data() + 8);
-
-            // size_t peer_blob_size = announce_resp.size() - 20;
-            // std::cout << "Announce response length: " << announce_resp.size()
-            //           << ", peer blob size: " << peer_blob_size
-            //           << ", expected peers (peer_blob_size/6): " << peer_blob_size / 6 << "\n";
 
             std::vector<unsigned char> peer_blob(announce_resp.begin() + 20, announce_resp.end());
             size_t num_peers = peer_blob.size() / 6;
