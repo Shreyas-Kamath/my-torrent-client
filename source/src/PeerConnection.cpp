@@ -12,6 +12,57 @@ void PeerConnection::start() {
         });
 }
 
+void PeerConnection::start_inbound() {
+    auto self = shared_from_this();
+
+    std::print("got an inbound connection\n");
+    boost::asio::async_read(socket_, boost::asio::buffer(handshake_buf_),
+        [self](boost::system::error_code ec, size_t bytes) {
+            if (ec) {
+                std::cout << ec.what() << '\n';
+                self->stop();
+                return;
+            }
+
+            std::string peer_info_hash(self->handshake_buf_.data() + 28, 20);
+            if (peer_info_hash != std::string(reinterpret_cast<const char*>(self->info_hash_.data()), 20)) {
+                self->stop();
+                return;
+            }
+
+            std::print("handshake matches!\n");
+            self->send_handshake();
+        });
+}
+
+void PeerConnection::send_handshake() {
+    auto self = shared_from_this();
+
+    // Construct handshake message
+    handshake_buf_[0] = 19;                                     // pstrlen
+    std::memcpy(&handshake_buf_[1], "BitTorrent protocol", 19); // pstr
+    std::memset(&handshake_buf_[20], 0, 8);                     // reserved
+    std::memcpy(&handshake_buf_[28], info_hash_.data(), 20);    // info_hash
+    std::memcpy(&handshake_buf_[48], peer_id_.data(), 20);      // peer_id
+
+    boost::asio::async_write(socket_,
+        boost::asio::buffer(handshake_buf_),
+        [self](boost::system::error_code ec, std::size_t bytes) {
+            if (ec) {
+                self->stop();
+                return;
+            }
+            else self->on_inbound_handshake_complete();
+        });    
+}
+
+void PeerConnection::on_inbound_handshake_complete() {
+    std::print("inbound peer registered\n");
+    piece_manager_.add_to_peer_list(weak_from_this());
+    signal_bitfield();
+    read_message_length();
+}
+
 // close connection and stop wasting resources
 void PeerConnection::stop() {
     boost::system::error_code ec;
@@ -130,6 +181,7 @@ void PeerConnection::handle_message() {
 
         case 2: 
             peer_interested = true; 
+            std::print("Peer is interested\n");
             signal_unchoke();
             break;                                                              // peer is interested in our pieces
         case 3:
@@ -137,7 +189,7 @@ void PeerConnection::handle_message() {
             break;                                                              // peer is not interested in our pieces
         case 4: handle_have(payload); break;                                    // peer has a piece
         case 5: handle_bitfield(payload); break;                                // peer's bitfield
-        case 6: handle_request(payload); break;                                 // received a request
+        case 6: std::print("Received a request\n"); handle_request(payload); break;                                 // received a request
         case 7: handle_piece(payload); break;                                   // received piece data
         case 8: std::cout << "Received cancel\n"; break;                        // received a cancel
         case 9: std::cout << "Received port\n"; break;                          // received a port
@@ -319,9 +371,7 @@ void PeerConnection::signal_have(int piece_index) {
     std::memcpy(msg.data() + 5, &index, 4); // piece index in big endian
 
     boost::asio::async_write(socket_, boost::asio::buffer(msg),
-        [self, piece_index](boost::system::error_code ec, size_t bytes) {
-            if (ec) return;
-        }
+        [self, piece_index](boost::system::error_code ec, size_t bytes) {}
     );
 } 
 
@@ -359,7 +409,9 @@ void PeerConnection::signal_unchoke() {
     msg[4] = 1; // id = unchoke
 
     boost::asio::async_write(socket_, boost::asio::buffer(msg),
-        [self](boost::system::error_code ec, size_t bytes) {});
+        [self](boost::system::error_code ec, size_t bytes) {
+            if (!ec) std::print("Unchoked a peer\n");
+        });
 
     // again, we don't care if the message is received by the peer or not
 }
@@ -394,6 +446,6 @@ void PeerConnection::handle_request(const std::span<const unsigned char> payload
 
     boost::asio::async_write(socket_, boost::asio::buffer(buffer),
         [self, b = std::move(buffer)](boost::system::error_code ec, size_t bytes) mutable {
-            if (ec) std::print("Block could not be sent\n");
+            if (!ec) std::print("Block uploaded\n");
         });
 }

@@ -16,6 +16,8 @@ using boost::asio::ip::tcp;
 
 class PeerConnection : public std::enable_shared_from_this<PeerConnection> {
 public:
+
+    // outbound connections
     PeerConnection(boost::asio::io_context& io,
                    Peer peer,
                    std::array<uint8_t, 20ULL> info_hash,
@@ -30,7 +32,24 @@ public:
             peer_bitfield_.resize(pm.num_pieces_, false);
           }
 
+    // inbound connections
+    PeerConnection(tcp::socket socket,
+                   std::array<uint8_t, 20> info_hash,
+                   std::string peer_id,
+                   PieceManager& pm)
+        : socket_(std::move(socket)),
+          peer_(socket_.remote_endpoint().address(), socket_.remote_endpoint().port()),
+          info_hash_(std::move(info_hash)),
+          peer_id_(std::move(peer_id)),
+          piece_manager_(pm) {
+        peer_bitfield_.resize(pm.num_pieces_, false);
+    }
+
     void start();
+    void start_inbound();
+    void send_handshake();
+    void on_inbound_handshake_complete();
+
     void stop();
     void decrement_inflight_blocks();
     void signal_have(int piece_index);

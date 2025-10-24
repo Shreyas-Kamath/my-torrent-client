@@ -20,7 +20,7 @@ class TorrentClient {
 public:
     TorrentClient(const std::string& torrent_file_path)
         : io_(),
-          acceptor_(io_, boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), 6881))
+          acceptor_(io_, boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), 31616))
     {
         auto in = read_from_file(torrent_file_path);
         metadata_ = parse_torrent(in);
@@ -46,6 +46,8 @@ public:
         std::signal(SIGINT, &TorrentClient::signal_handler);
     }
 
+    ~TorrentClient() = default;
+
     void run() {
         // setup timers
         announce_timer_ = std::make_shared<boost::asio::steady_timer>(io_);
@@ -54,11 +56,10 @@ public:
         // start first announce and stats
         announce_fn();
         stats_fn();
-
+        start_accept();
+        
         // event loop
-        while (!stop_signal_.load()) {
-            io_.run_one();
-        }
+        while (!stop_signal_.load()) io_.run_one();
 
         shutdown();
     }
@@ -67,6 +68,23 @@ private:
     // static signal handler
     static void signal_handler(int) {
         if (instance_) instance_->stop_signal_.store(true);
+    }
+
+    void start_accept() {
+        auto socket = std::make_shared<tcp::socket>(io_);
+        
+        acceptor_.async_accept(*socket, 
+            [this, socket](boost::system::error_code ec) {
+            if (!ec) { handle_incoming_connection(socket); std::print("acceptor got a connection\n"); }
+            start_accept();
+        });
+    }
+
+    void handle_incoming_connection(std::shared_ptr<tcp::socket> socket) {
+        auto conn = std::make_shared<PeerConnection>(std::move(*socket), metadata_.info_hash, "-CT0001-123456789012", *pm_);
+
+        connections_.push_back(conn);
+        conn->start_inbound();
     }
 
     void announce_fn() {

@@ -14,11 +14,13 @@ TrackerResponse UdpTracker::announce(const std::array<uint8_t, 20>& infoHash, co
 
         const std::string host = parsed.host;
         const std::string port = parsed.port.empty() ? "6969" : parsed.port; // fallback
+        const uint16_t my_port = 31616;
 
         boost::asio::io_context io;
         udp::resolver resolver(io);
         auto endpoints = resolver.resolve(udp::v4(), host, port);
         udp::endpoint ep = *endpoints.begin();
+        // udp::socket socket(io, udp::endpoint(udp::v4(), my_port));
         udp::socket socket(io);
         socket.open(udp::v4());
 
@@ -57,7 +59,7 @@ TrackerResponse UdpTracker::announce(const std::array<uint8_t, 20>& infoHash, co
             write_be32(areq, 84, 0); // IP default
             write_be32(areq, 88, rand32()); // key
             write_be32(areq, 92, static_cast<uint32_t>(-1)); // num_want
-            write_be16(areq, 96, std::stoi(port));
+            write_be16(areq, 96, my_port); // port
 
             auto announce_resp = do_exchange(io, socket, ep, areq, 20, timeout);
             if (announce_resp.size() < 20) continue;

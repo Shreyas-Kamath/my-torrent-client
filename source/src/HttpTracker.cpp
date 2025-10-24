@@ -15,7 +15,7 @@ TrackerResponse HttpTracker::announce(const std::array<uint8_t, 20>& infoHash, c
         std::string target = parsed.target + 
             "?info_hash=" + percent_encode(infoHash) +
             "&peer_id="   + peerId +
-            "&port=6881&uploaded=" + std::to_string(up) + 
+            "&port=31616&uploaded=" + std::to_string(up) + 
             "&downloaded=" + std::to_string(down) + 
             "&left=" + std::to_string(tot - down) +
             "&compact=1";
