@@ -181,7 +181,7 @@ void PeerConnection::handle_message() {
 
         case 2: 
             peer_interested = true; 
-            std::print("Peer is interested\n");
+            // std::print("Peer is interested\n");
             signal_unchoke();
             break;                                                              // peer is interested in our pieces
         case 3:
@@ -189,7 +189,7 @@ void PeerConnection::handle_message() {
             break;                                                              // peer is not interested in our pieces
         case 4: handle_have(payload); break;                                    // peer has a piece
         case 5: handle_bitfield(payload); break;                                // peer's bitfield
-        case 6: std::print("Received a request\n"); handle_request(payload); break;                                 // received a request
+        case 6: handle_request(payload); break;                                 // received a request
         case 7: handle_piece(payload); break;                                   // received piece data
         case 8: std::cout << "Received cancel\n"; break;                        // received a cancel
         case 9: std::cout << "Received port\n"; break;                          // received a port
@@ -290,7 +290,7 @@ void PeerConnection::handle_have(const std::span<const unsigned char> payload) {
 void PeerConnection::handle_bitfield(const std::span<const unsigned char> payload) {
     set_bitfield(payload);
 
-    if (!am_interested_ && peer_has_needed_piece()) {
+    if (!am_interested_ /* && peer_has_needed_piece() */) {
         am_interested_ = true;
         send_interested();
     }
@@ -301,7 +301,7 @@ void PeerConnection::handle_bitfield(const std::span<const unsigned char> payloa
 // condition to check whether sending requests to this peer is redundant
 bool PeerConnection::peer_has_needed_piece() {
     for (size_t i = 0; i < peer_bitfield_.size(); ++i) {
-        if (peer_bitfield_.test(i) && !piece_manager_.is_complete(i)) {
+        if (peer_bitfield_.test(i) && !piece_manager_.is_complete((int)i)) {
             return true; // This peer has at least one piece we need
         }
     }
@@ -313,7 +313,7 @@ void PeerConnection::set_bitfield(const std::span<const unsigned char> payload) 
     for (size_t i = 0; i < payload.size(); ++i) {
         for (int bit = 7; bit >= 0; --bit) {
             if ((payload[i] >> bit) & 1) {
-                int piece_index = i * 8 + (7 - bit);
+                auto piece_index = i * 8 + (7 - bit);
                 peer_bitfield_.set(piece_index);
             }
         }
@@ -375,12 +375,20 @@ void PeerConnection::signal_have(int piece_index) {
     );
 } 
 
+bool PeerConnection::is_alive() const {
+    return socket_.is_open();
+}
+
+const Peer& PeerConnection::peer() const {
+    return peer_;
+}
+
 void PeerConnection::signal_bitfield() {
     auto self = shared_from_this();
 
     auto my_bitfield = piece_manager_.get_my_bitfield();
     
-    uint32_t msg_len = boost::endian::native_to_big(1 + my_bitfield.size());
+    uint32_t msg_len = (uint32_t)boost::endian::native_to_big(1 + my_bitfield.size());
 
     std::vector<uint8_t> buffer;
     buffer.reserve(4 + msg_len);
@@ -409,9 +417,7 @@ void PeerConnection::signal_unchoke() {
     msg[4] = 1; // id = unchoke
 
     boost::asio::async_write(socket_, boost::asio::buffer(msg),
-        [self](boost::system::error_code ec, size_t bytes) {
-            if (!ec) std::print("Unchoked a peer\n");
-        });
+        [self](boost::system::error_code ec, size_t bytes) {});
 
     // again, we don't care if the message is received by the peer or not
 }
@@ -429,7 +435,7 @@ void PeerConnection::handle_request(const std::span<const unsigned char> payload
 
     auto self = shared_from_this();
 
-    uint32_t msg_len = boost::endian::native_to_big(9 + block.size());
+    uint32_t msg_len = (uint32_t)boost::endian::native_to_big(9 + block.size());
 
     std::vector<uint8_t> buffer;
     buffer.reserve(4 + msg_len);
@@ -446,6 +452,6 @@ void PeerConnection::handle_request(const std::span<const unsigned char> payload
 
     boost::asio::async_write(socket_, boost::asio::buffer(buffer),
         [self, b = std::move(buffer)](boost::system::error_code ec, size_t bytes) mutable {
-            if (!ec) std::print("Block uploaded\n");
+            // if (!ec) std::print("Block uploaded\n");
         });
 }

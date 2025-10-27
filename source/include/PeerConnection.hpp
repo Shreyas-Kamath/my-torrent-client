@@ -54,6 +54,9 @@ public:
     void decrement_inflight_blocks();
     void signal_have(int piece_index);
 
+    bool is_alive() const;
+    const Peer& peer() const;
+
 private:
     void do_handshake();                                                    //
     void on_handshake(boost::system::error_code ec, std::size_t bytes);     //
