@@ -25,7 +25,7 @@ void PieceManager::load_resume_data() {
 
         // modify my bitfield
         update_my_bitfield(piece_index);
-
+        stats_.downloaded_bytes.fetch_add(curr_length, std::memory_order_relaxed);
         ++piece_count;
     }
     
