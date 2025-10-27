@@ -88,6 +88,14 @@ private:
     }
 
     void announce_fn() {
+        // kick stale peers off the pool
+        connections_.erase(
+            std::remove_if(connections_.begin(), connections_.end(), [](const auto& conn) {
+                return (conn == nullptr || !conn->is_alive());
+            }),
+            connections_.end()
+        );
+
         for (auto& tracker : trackers_) {
             try {
                 auto response = tracker->announce(metadata_.info_hash,
@@ -97,7 +105,11 @@ private:
                                                   stats_->total_size);
 
                 for (auto& peer : response.peers) {
-                    if (peer_pool_.insert(peer).second) {
+                    auto exists = std::any_of(connections_.begin(), connections_.end(), [&peer](const auto& conn) {
+                        return conn && conn->peer() == peer;
+                    });
+
+                    if (!exists) {
                         auto conn = std::make_shared<PeerConnection>(
                             io_, peer, metadata_.info_hash, "-CT0001-123456789012", *pm_
                         );
@@ -143,7 +155,6 @@ private:
     std::unique_ptr<PieceManager> pm_;
 
     std::vector<std::shared_ptr<BaseTracker>> trackers_;
-    std::unordered_set<Peer, PeerHash> peer_pool_;
     std::vector<std::shared_ptr<PeerConnection>> connections_;
 
     std::shared_ptr<boost::asio::steady_timer> announce_timer_;

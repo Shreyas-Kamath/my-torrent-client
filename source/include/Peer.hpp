@@ -29,10 +29,4 @@ private:
     boost::asio::ip::tcp::endpoint endpoint_;
 };
 
-struct PeerHash {
-    size_t operator()(const Peer& p) const noexcept {
-        return std::hash<std::string>()(p.ip()) ^ (std::hash<uint16_t>()(p.port()) << 1);
-    }
-};
-
 std::vector<Peer> parse_compact_peers(const BEncodeValue& peers_blob);
